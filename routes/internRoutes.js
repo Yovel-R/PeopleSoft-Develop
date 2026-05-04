@@ -6,6 +6,8 @@ const multer = require('multer');
 const upload = multer();
 const Counter = require("../models/counter.model");
 const ExcelJS = require("exceljs");
+const { sendEmail, LOGO_URL } = require("../utilities/sendEmail");
+const { getSignature } = require("../utilities/emailSignature");
 
 
 router.post("/add", async (req, res) => {
@@ -142,11 +144,6 @@ router.get("/all/active", async (req, res) => {
 });
 
 
-
-
-
-const { sendEmail, LOGO_URL } = require("../utilities/sendEmail");
-const { getSignature } = require("../utilities/emailSignature");
 
 
 router.put(

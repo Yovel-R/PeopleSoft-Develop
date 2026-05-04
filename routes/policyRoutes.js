@@ -8,6 +8,17 @@ router.get("/all", async (req, res) => {
   res.json(policies);
 });
 
+/* CREATE SINGLE */
+router.post("/add", async (req, res) => {
+  try {
+    const policy = new Policy(req.body);
+    await policy.save();
+    res.status(201).json(policy);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
 /* BULK CREATE */
 router.post("/bulk-add", async (req, res) => {
   const { policies } = req.body;

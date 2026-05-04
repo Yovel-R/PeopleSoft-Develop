@@ -1,6 +1,6 @@
 const express = require("express");
 const multer = require("multer");
-const sendEmail = require("../utilities/sendEmail");
+const { sendEmail } = require("../utilities/sendEmail");
 const router = express.Router();
 
 const upload = multer({ storage: multer.memoryStorage() }); // store files in RAM
