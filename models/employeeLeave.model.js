@@ -14,12 +14,17 @@ const EmployeeLeaveSchema = new mongoose.Schema(
 
     reason: { type: String, required: true },
 
-    status: {
+    managerStatus: {
       type: String,
       enum: ["pending", "accepted", "rejected"],
       default: "pending",
     },
-
+    hrStatus: {
+      type: String,
+      enum: ["pending", "accepted", "rejected"],
+      default: "pending",
+    },
+    managerId: { type: String }, // To filter leaves for a specific manager
     rejectionReason: { type: String, default: "" },
 
     // example: { "2025-01-10": "half", "2025-01-11": "full" }

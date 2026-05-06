@@ -1,4 +1,5 @@
 const express = require("express");
+const mongoose = require("mongoose");
 const Intern = require("../models/Intern");
 const Resignation = require("../models/resignation.model.js");  
 const router = express.Router();
@@ -6,8 +7,11 @@ const multer = require('multer');
 const upload = multer();
 const Counter = require("../models/counter.model");
 const ExcelJS = require("exceljs");
-const { sendEmail, LOGO_URL } = require("../utilities/sendEmail");
+const { sendEmail, getLogoUrl } = require("../utilities/sendEmail");
 const { getSignature } = require("../utilities/emailSignature");
+const { generateOfferLetter } = require("../utilities/offerLetterGenerator");
+const fs = require('fs');
+const path = require('path');
 
 
 router.post("/add", async (req, res) => {
@@ -76,7 +80,7 @@ router.post("/add", async (req, res) => {
           <p><strong>LinkedIn:</strong> <a href="${linkedin}">${linkedin}</a></p>
           <br/>
           <p>The applicant's resume is attached to this email.</p>
-          ${getSignature(LOGO_URL)}
+          ${getSignature(getLogoUrl())}
         `,
         attachments: attachments,
       });
@@ -135,7 +139,9 @@ router.get("/all/active", async (req, res) => {
       query.createdAt = { $gte: start, $lte: end }; // <‑ use createdAt
     }
 
-    const interns = await Intern.find(query).sort({ createdAt: -1 });
+    const interns = await Intern.find(query)
+      .populate("assignedManager", "fullName department")
+      .sort({ createdAt: -1 });
     res.json(interns);
   } catch (err) {
     console.error("Fetch Active Interns Error:", err);
@@ -148,14 +154,9 @@ router.get("/all/active", async (req, res) => {
 
 router.put(
   "/accept/:id",
-  upload.fields([
-    { name: "pdf" },
-    { name: "pdf_1" },
-    { name: "pdf_2" },
-  ]),
   async (req, res) => {
     try {
-      const { onboardingDate, endDate, internshipType } = req.body;
+      const { onboardingDate, endDate, internshipType, role } = req.body;
 
       const intern = await Intern.findById(req.params.id);
       if (!intern) {
@@ -166,28 +167,45 @@ router.put(
         return res.status(400).json({ message: "Invalid internship type" });
       }
 
-      const pdfBuffer  = req.files?.pdf?.[0]?.buffer;
-      const pdf1Buffer = req.files?.pdf_1?.[0]?.buffer;
-      const pdf2Buffer = req.files?.pdf_2?.[0]?.buffer;
-
-      if (!pdfBuffer || !pdf1Buffer || !pdf2Buffer) {
-        return res.status(400).json({ message: "All PDF files are required" });
-      }
-
+      // 1. Generate Intern ID
       const newId = await generateInternId();
 
+      // 2. Generate Offer Letter PDF Buffer on the fly
+      const pdfBuffer = await generateOfferLetter({
+        fullName: intern.fullName,
+        role: role || intern.role,
+        onboardingDate: onboardingDate,
+        endDate: endDate
+      });
+
+      // 3. Prepare Static Attachments (Annexure & NDA)
+      const assetsDir = path.join(__dirname, '../assets/pdf');
+      const annexurePath = path.join(assetsDir, 'Softrate_Internship_Annexure.pdf');
+      const ndaPath = path.join(assetsDir, 'Internship NDA.pdf');
+
+      const attachments = [
+        { filename: `${newId}-Offer-Letter.pdf`, content: pdfBuffer }
+      ];
+
+      if (fs.existsSync(annexurePath)) {
+        attachments.push({ filename: `${newId}-Annexure.pdf`, content: fs.readFileSync(annexurePath) });
+      }
+      if (fs.existsSync(ndaPath)) {
+        attachments.push({ filename: `${newId}-NDA.pdf`, content: fs.readFileSync(ndaPath) });
+      }
+
+      // 4. Update Intern Record
       intern.internid = newId;
       intern.status = "approved";
       intern.onboardingDate = onboardingDate;
       intern.endDate = endDate;
       if (internshipType) intern.internshipType = internshipType;
+      if (role) intern.role = role;
 
       await intern.save();
 
-      console.log("Intern saved successfully. Preparing to send email...");
-      console.log("LOGO_URL:", LOGO_URL);
-      console.log("Attachments presence - Offer:", !!pdfBuffer, "Annexure:", !!pdf1Buffer, "NDA:", !!pdf2Buffer);
-
+      console.log("Intern saved successfully. Preparing to send email with generated documents...");
+      
       await sendEmail({
         to: intern.email,
         subject: "Internship Application – Approval Notification",
@@ -204,16 +222,12 @@ router.put(
           <p style="margin: 0 0 0 0;">For first-time login, you will be required to set your own password and complete your profile by providing the necessary details.</p>
           <p style="margin: 0 0 0 0;">Kindly ensure that all required information is submitted before your onboarding date to avoid any delays.</p>
           <p style="margin: 0 0 15px 0;">For any queries, feel free to contact us.</p>
-          ${getSignature(LOGO_URL)}
+          ${getSignature(getLogoUrl())}
         `,
-        attachments: [
-          { filename: `${newId}-Offer-Letter.pdf`, content: pdfBuffer },
-          { filename: `${newId}-Annexure.pdf`, content: pdf1Buffer },
-          { filename: `${newId}-NDA.pdf`, content: pdf2Buffer },
-        ],
+        attachments: attachments,
       });
 
-      res.json({ message: "Intern approved & email sent", intern });
+      res.json({ message: "Intern approved & email sent with Offer Letter", intern });
     } catch (err) {
       console.error("Approve Error [FULL STACK]:", err.stack);
       console.error("Approve Error:", err);
@@ -296,11 +310,19 @@ router.post("/login", async (req, res) => {
 
 
 
-// Get intern by internid
-router.get("/get/:internid", async (req, res) => {
+// Get intern by internid or MongoDB _id
+router.get("/get/:id", async (req, res) => {
   try {
-    const internid = req.params.internid;
-    const intern = await Intern.findOne({ internid });
+    const id = req.params.id;
+    let intern;
+
+    // Try finding by internid first
+    intern = await Intern.findOne({ internid: id });
+
+    // If not found and id is a valid MongoDB ObjectId, try finding by _id
+    if (!intern && mongoose.Types.ObjectId.isValid(id)) {
+      intern = await Intern.findById(id);
+    }
 
     if (!intern) {
       return res.status(404).json({ message: "Intern not found" });
@@ -467,6 +489,59 @@ router.get("/export/excel", async (req, res) => {
   } catch (err) {
     console.error("Intern Excel Export Error:", err);
     res.status(500).json({ message: "Excel export failed" });
+  }
+});
+
+/* ============================
+   ASSIGN INTERN TO MANAGER
+============================ */
+router.put("/assign-manager/:id", async (req, res) => {
+  try {
+    const { managerId } = req.body;
+    const intern = await Intern.findById(req.params.id);
+    if (!intern) return res.status(404).json({ message: "Intern not found" });
+
+    intern.assignedManager = managerId;
+    intern.managerApprovalStatus = "pending";
+    await intern.save();
+
+    res.json({ message: "Intern assigned to manager", intern });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error });
+  }
+});
+
+/* ============================
+   GET INTERNS ASSIGNED TO MANAGER
+============================ */
+router.get("/assigned-to/:managerId", async (req, res) => {
+  try {
+    const interns = await Intern.find({ 
+      assignedManager: req.params.managerId,
+      status: "initial" // Only show pending applications to managers
+    });
+    res.json(interns);
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error });
+  }
+});
+
+/* ============================
+   MANAGER REVIEW (APPROVE/REJECT)
+============================ */
+router.put("/manager-review/:id", async (req, res) => {
+  try {
+    const { status, remarks } = req.body; // status: 'approved' | 'rejected'
+    const intern = await Intern.findById(req.params.id);
+    if (!intern) return res.status(404).json({ message: "Intern not found" });
+
+    intern.managerApprovalStatus = status;
+    intern.managerRemarks = remarks;
+    await intern.save();
+
+    res.json({ message: `Intern ${status} by manager`, intern });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error });
   }
 });
 

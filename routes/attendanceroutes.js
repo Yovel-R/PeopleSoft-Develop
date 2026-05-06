@@ -537,4 +537,28 @@ router.post("/update-manual", async (req, res) => {
   }
 });
 
+/* ======================
+   📌 Get Attendance Trend (Last 7 Days)
+====================== */
+router.get("/trend", async (req, res) => {
+  try {
+    const trend = [];
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().slice(0, 10);
+      
+      const count = await Attendance.countDocuments({ date: dateStr, punchInTime: { $exists: true } });
+      trend.push({
+        date: dateStr,
+        day: date.toLocaleDateString('en-US', { weekday: 'short' }).charAt(0),
+        count
+      });
+    }
+    res.json(trend);
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 module.exports = router;

@@ -24,6 +24,11 @@ const InternSchema = new mongoose.Schema({
 
 
   // New backend auto-field
+  // Manager Assignment Logic
+  assignedManager: { type: mongoose.Schema.Types.ObjectId, ref: "Employee", default: null },
+  managerApprovalStatus: { type: String, enum: ["initial", "pending", "approved", "rejected"], default: "initial" },
+  managerRemarks: { type: String, default: "" },
+
   status: { type: String, default: "initial" },
   leaveCount: { type: Number, default: 0 },
 

@@ -3,76 +3,12 @@ const router = express.Router();
 
 const EmployeeLeave = require("../models/employeeLeave.model");
 const LeaveCounter = require("../models/leaveCounter.model");
+const Intern = require("../models/Intern");
+const Employee = require("../models/EmployeeModel");
 
 /* ============================
    APPLY LEAVE
 ============================ */
-// router.post("/apply", async (req, res) => {
-//   try {
-//     const data = req.body;
-
-//     const fromDate = new Date(data.fromDate);
-//     const toDate = new Date(data.toDate);
-
-//     const fromDay = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
-//     const toDay = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate());
-
-//     // 1️⃣ OVERLAPPING LEAVE CHECK
-//     const overlapping = await EmployeeLeave.find({
-//       employeeId: data.employeeId,
-//       status: { $ne: "rejected" },
-//       fromDate: { $lte: toDay },
-//       toDate: { $gte: fromDay },
-//     });
-
-//     if (overlapping.length > 0) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "You already have an overlapping leave.",
-//       });
-//     }
-
-//     // 2️⃣ FETCH LEAVE COUNTER (BALANCE)
-//     const counter = await LeaveCounter.findOne({
-//       employeeId: data.employeeId,
-//       leaveType: data.leaveType,
-//     });
-
-//     if (!counter) {
-//       return res.status(404).json({
-//         success: false,
-//         message: "Leave balance not found",
-//       });
-//     }
-
-//     // 3️⃣ ✅ INSUFFICIENT LEAVE BALANCE CHECK
-//     if (Number(data.numberOfDays) > counter.balance) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Insufficient leave balance",
-//       });
-//     }
-
-//     // 4️⃣ CREATE LEAVE (NO DEDUCTION HERE)
-//     const leave = await EmployeeLeave.create({
-//       employeeId: data.employeeId,
-//       employeeName: data.employeeName,
-//       leaveType: data.leaveType,
-//       fromDate: fromDay,
-//       toDate: toDay,
-//       numberOfDays: Number(data.numberOfDays),
-//       reason: data.reason,
-//       status: "pending",
-//       rejectionReason: "",
-//       perDayDurations: data.perDayDurations || {},
-//     });
-
-//     res.json({ success: true, leaveId: leave._id });
-//   } catch (err) {
-//     console.error("Leave apply error:", err);
-//     res.status(500).json({ success: false, error: err.message });
-//   }
-// });
 router.post("/apply", async (req, res) => {
   try {
     const data = req.body;
@@ -83,37 +19,47 @@ router.post("/apply", async (req, res) => {
     const fromDay = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
     const toDay = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate());
 
-    /* ============================
-       OVERLAPPING LEAVE CHECK
-    ============================ */
+    // 1. Overlapping Leave Check
     const overlapping = await EmployeeLeave.find({
       employeeId: data.employeeId,
-      status: { $ne: "rejected" },
+      hrStatus: { $ne: "rejected" },
       fromDate: { $lte: toDay },
       toDate: { $gte: fromDay },
     });
 
     if (overlapping.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "You already have an overlapping leave.",
-      });
+      return res.status(400).json({ success: false, message: "You already have an overlapping leave." });
     }
 
-    /* ============================
-       MATERNITY LEAVE (NO BALANCE CHECK)
-    ============================ */
-    const isMaternityLeave =
-      data.leaveType?.trim().toLowerCase() === "maternity leave";
+    // 2. Fetch Assigned Manager
+    let assignedManagerId = null;
+    const intern = await Intern.findOne({ internid: data.employeeId });
+    if (intern) {
+      assignedManagerId = intern.assignedManager;
+    } else {
+      const employee = await Employee.findOne({ EmployeeId: data.employeeId });
+      if (employee) assignedManagerId = employee.assignedManager;
+    }
 
+    // 3. Balance Check (Simplified)
+    const isMaternityLeave = data.leaveType?.trim().toLowerCase() === "maternity leave";
     let normalizedLeaveType = data.leaveType;
 
-    if (!isMaternityLeave) {
-      /* ============================
-         FETCH CURRENT CYCLE COUNTER
-      ============================ */
+    if (intern) {
+      // Intern Limit: 2 days per month
+      const monthStart = new Date(fromDay.getFullYear(), fromDay.getMonth(), 1);
+      const monthEnd = new Date(fromDay.getFullYear(), fromDay.getMonth() + 1, 0, 23, 59, 59);
+      const monthlyLeaves = await EmployeeLeave.find({
+        employeeId: data.employeeId,
+        hrStatus: { $ne: "rejected" },
+        fromDate: { $gte: monthStart, $lte: monthEnd }
+      });
+      const usedThisMonth = monthlyLeaves.reduce((sum, l) => sum + (l.numberOfDays || 0), 0);
+      if (usedThisMonth + Number(data.numberOfDays) > 2) {
+        return res.status(400).json({ success: false, message: `Interns are allowed only 2 leaves per month. Used: ${usedThisMonth}` });
+      }
+    } else if (!isMaternityLeave) {
       const today = new Date();
-
       const counter = await LeaveCounter.findOne({
         employeeId: data.employeeId,
         leaveType: { $regex: `^${data.leaveType.trim()}$`, $options: "i" },
@@ -121,29 +67,14 @@ router.post("/apply", async (req, res) => {
         nextResetDate: { $gte: today },
       });
 
-      if (!counter) {
-        return res.status(404).json({
-          success: false,
-          message: "Leave balance not found",
-        });
-      }
-
-      /* ============================
-         ❌ BLOCK APPLY IF INSUFFICIENT
-      ============================ */
+      if (!counter) return res.status(404).json({ success: false, message: "Leave balance not found" });
       if (Number(data.numberOfDays) > counter.balance) {
-        return res.status(400).json({
-          success: false,
-          message: `Insufficient leave balance. Available: ${counter.balance}`,
-        });
+        return res.status(400).json({ success: false, message: `Insufficient balance. Available: ${counter.balance}` });
       }
-
-      normalizedLeaveType = counter.leaveType; // normalized
+      normalizedLeaveType = counter.leaveType;
     }
 
-    /* ============================
-       CREATE LEAVE (NO DEDUCTION)
-    ============================ */
+    // 4. Create Leave Request
     const leave = await EmployeeLeave.create({
       employeeId: data.employeeId,
       employeeName: data.employeeName,
@@ -152,7 +83,9 @@ router.post("/apply", async (req, res) => {
       toDate: toDay,
       numberOfDays: Number(data.numberOfDays),
       reason: data.reason,
-      status: "pending",
+      managerStatus: "pending",
+      hrStatus: "pending",
+      managerId: assignedManagerId ? assignedManagerId.toString() : null,
       rejectionReason: "",
       perDayDurations: data.perDayDurations || {},
     });
@@ -165,82 +98,50 @@ router.post("/apply", async (req, res) => {
 });
 
 /* ============================
-   GET LEAVE BALANCE
+   MANAGER: GET TEAM LEAVE REQUESTS
 ============================ */
-router.get("/balance/:employeeId", async (req, res) => {
+router.get("/manager-pending/:managerId", async (req, res) => {
   try {
-    const counters = await LeaveCounter.find({
-      employeeId: req.params.employeeId,
-    })
-      .select("leaveType balance totalAllowed used")
-      .lean();
-
-    if (!counters.length) {
-      return res.status(404).json({
-        success: false,
-        message: "Leave balance not found",
-      });
-    }
-
-    res.json({ success: true, data: counters });
+    const leaves = await EmployeeLeave.find({ 
+      managerId: req.params.managerId,
+      managerStatus: "pending" 
+    }).sort({ createdAt: -1 });
+    res.json(leaves);
   } catch (err) {
-    console.error("Leave balance error:", err);
-    res.status(500).json({ success: false, message: "Server error" });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
 /* ============================
-   UPDATE LEAVE BALANCE
+   MANAGER: APPROVE/REJECT LEAVE
 ============================ */
-
-router.put("/update-status/:leaveId", async (req, res) => {
+router.put("/manager-action/:leaveId", async (req, res) => {
   try {
-    const { status } = req.body;
-
+    const { status, rejectionReason } = req.body; // status: accepted or rejected
     const leave = await EmployeeLeave.findById(req.params.leaveId);
-    if (!leave) {
-      return res.status(404).json({ success: false, message: "Leave not found" });
-    }
+    if (!leave) return res.status(404).json({ success: false, message: "Leave not found" });
 
-    leave.status = status;
+    leave.managerStatus = status;
+    if (status === "rejected") {
+      leave.hrStatus = "rejected"; // If manager rejects, HR also sees it as rejected
+      leave.rejectionReason = rejectionReason || "Rejected by Manager";
+    }
     await leave.save();
-
-    // ✅ Reduce balance ONLY when approved
-    if (status === "approved") {
-      const counter = await LeaveCounter.findOne({
-        employeeId: leave.employeeId,
-        leaveType: leave.leaveType,
-      });
-
-      if (!counter) {
-        return res.status(404).json({
-          success: false,
-          message: "Leave balance not found",
-        });
-      }
-
-      counter.used += leave.numberOfDays;
-      counter.balance = counter.totalAllowed - counter.used;
-
-      await counter.save();
-    }
-
-    res.json({ success: true, message: "Leave updated successfully" });
+    res.json({ success: true, message: `Leave ${status} by manager` });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: "Server error" });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
 /* ============================
-   GET EMPLOYEE LEAVES
+   HR: GET PENDING LEAVES (Only if Manager Approved)
 ============================ */
-router.get("/employee/:employeeId", async (req, res) => {
+router.get("/hr-pending", async (req, res) => {
   try {
-    const leaves = await EmployeeLeave.find({
-      employeeId: req.params.employeeId,
-    }).sort({ fromDate: -1 });
-
+    const leaves = await EmployeeLeave.find({ 
+      managerStatus: "accepted", 
+      hrStatus: "pending" 
+    }).sort({ createdAt: -1 });
     res.json(leaves);
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -248,116 +149,120 @@ router.get("/employee/:employeeId", async (req, res) => {
 });
 
 /* ============================
-   GET PENDING LEAVES (ADMIN)
+   HR: FINAL APPROVE/REJECT
 ============================ */
-router.get("/pending", async (req, res) => {
-  try {
-    const leaves = await EmployeeLeave.find({ status: "pending" })
-      .sort({ createdAt: -1 });
-
-    res.json(leaves);
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-
-/* ============================
-   UPDATE LEAVE STATUS
-   APPROVE / REJECT
-============================ */
-router.put("/:id", async (req, res) => {
+router.put("/hr-action/:id", async (req, res) => {
   try {
     let { status, rejectionReason } = req.body;
-
-    // Convert "approved" from frontend to valid enum "accepted"
     if (status === "approved") status = "accepted";
 
-    // Validate status
-    if (!["accepted", "rejected"].includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid status value",
-      });
-    }
-
-    // Find the leave request
     const leave = await EmployeeLeave.findById(req.params.id);
-    if (!leave) {
-      return res.status(404).json({
-        success: false,
-        message: "Leave not found",
-      });
+    if (!leave) return res.status(404).json({ success: false, message: "Leave not found" });
+
+    if (leave.managerStatus !== "accepted") {
+      return res.status(400).json({ success: false, message: "Manager approval required first" });
     }
 
-    // Prevent double processing
-    if (leave.status !== "pending") {
-      return res.status(400).json({
-        success: false,
-        message: "Leave already processed",
-      });
-    }
-
-    // ✅ If accepted → update leave counter
+    // Process balance deduction if HR accepts
     if (status === "accepted") {
-      const today = new Date();
-
-      // Find leave counter (case-insensitive)
-      const counter = await LeaveCounter.findOne({
-        employeeId: leave.employeeId,
-        leaveType: { $regex: `^${leave.leaveType.trim()}$`, $options: "i" },
-        cycleStartDate: { $lte: today },
-        nextResetDate: { $gte: today },
-      });
-
-      if (!counter) {
-        return res.status(404).json({
-          success: false,
-          message: "Leave balance not found",
+      // Check if it's an intern (they don't have LeaveCounters)
+      const isIntern = await Intern.findOne({ internid: leave.employeeId });
+      
+      if (!isIntern) {
+        const today = new Date();
+        const counter = await LeaveCounter.findOne({
+          employeeId: leave.employeeId,
+          leaveType: { $regex: `^${leave.leaveType.trim()}$`, $options: "i" },
+          cycleStartDate: { $lte: today },
+          nextResetDate: { $gte: today },
         });
-      }
 
-      // Atomic update to prevent race conditions
-      const updatedCounter = await LeaveCounter.findOneAndUpdate(
-        {
-          _id: counter._id,
-          balance: { $gte: leave.numberOfDays }, // ensure enough balance
-        },
-        {
-          $inc: { used: leave.numberOfDays, balance: -leave.numberOfDays },
-        },
-        { new: true }
-      );
+        if (!counter) return res.status(404).json({ success: false, message: "Leave balance not found" });
 
-      if (!updatedCounter) {
-        return res.status(400).json({
-          success: false,
-          message: "Insufficient leave balance",
-        });
+        const updatedCounter = await LeaveCounter.findOneAndUpdate(
+          { _id: counter._id, balance: { $gte: leave.numberOfDays } },
+          { $inc: { used: leave.numberOfDays, balance: -leave.numberOfDays } },
+          { new: true }
+        );
+
+        if (!updatedCounter) return res.status(400).json({ success: false, message: "Insufficient leave balance" });
       }
     }
 
-    // Update leave status and rejection reason
-    leave.status = status;
+    leave.hrStatus = status;
     leave.rejectionReason = status === "rejected" ? rejectionReason || "" : "";
-
     await leave.save();
+
+    res.json({ success: true, message: `Leave ${status} by HR`, leave });
+  } catch (err) {
+    console.error("HR Leave Action Error:", err);
+    res.status(500).json({ success: false, message: "Server error", error: err.message });
+  }
+});
+
+/* ============================
+   COMMON GETTERS
+============================ */
+// Compatibility route for old frontend calls (e.g., GET /api/leave/:id)
+router.get("/:employeeId", async (req, res) => {
+  try {
+    const leaves = await EmployeeLeave.find({ employeeId: req.params.employeeId }).sort({ fromDate: -1 });
+    res.json(leaves);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.get("/employee/:employeeId", async (req, res) => {
+  try {
+    const leaves = await EmployeeLeave.find({ employeeId: req.params.employeeId }).sort({ fromDate: -1 });
+    res.json(leaves);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+router.get("/balance/:employeeId", async (req, res) => {
+  try {
+    const counters = await LeaveCounter.find({ employeeId: req.params.employeeId }).select("leaveType balance totalAllowed used").lean();
+    res.json({ success: true, data: counters });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+});
+
+router.get("/count/:employeeId", async (req, res) => {
+  try {
+    const { employeeId } = req.params;
+    const month = parseInt(req.query.month);
+    const year = parseInt(req.query.year);
+
+    if (isNaN(month) || isNaN(year)) {
+      return res.status(400).json({ success: false, message: "Month and Year are required." });
+    }
+
+    const startOfMonth = new Date(year, month - 1, 1);
+    const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
+
+    const leaves = await EmployeeLeave.find({
+      employeeId,
+      hrStatus: { $ne: "rejected" },
+      fromDate: { $gte: startOfMonth, $lte: endOfMonth }
+    });
+
+    const totalDays = leaves.reduce((sum, l) => sum + (l.numberOfDays || 0), 0);
 
     res.json({
       success: true,
-      message: `Leave ${status} successfully`,
-      leave,
+      employeeId,
+      month,
+      year,
+      totalDays,
+      limit: 2
     });
   } catch (err) {
-    console.error("Leave Update Error:", err);
-    res.status(500).json({
-      success: false,
-      message: "Server error",
-      error: err.message,
-    });
+    res.status(500).json({ success: false, error: err.message });
   }
 });
-
-
 
 module.exports = router;

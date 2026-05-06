@@ -27,7 +27,7 @@ app.use('/api/intern', require('./routes/internRoutes'));
 app.use('/api/auth', require('./routes/auth.routes'));
 app.use('/api/attendance', require('./routes/attendanceroutes'));
 app.use('/api/reviews', require('./routes/internReview.route'));
-app.use('/api/leave', require('./routes/leave.routes'));
+app.use('/api/leave', require('./routes/employeeLeave.routes'));
 app.use('/api/resignation', require('./routes/resignation.routes'));
 app.use('/api', require('./routes/send-documents'));
 app.use('/api/employee', require('./routes/EmployeeRouter'));
@@ -39,7 +39,9 @@ app.use('/api/employee-terminations', require('./routes/employeeTermination.rout
 app.use('/api/leave-counter', require('./routes/leaveCounter.routes'));
 app.use('/api/policy', require('./routes/policyRoutes'));
 app.use("/api/holidays", require("./routes/holiday.routes"));
-
+app.use("/api/assignments", require("./routes/assignment.routes"));
+app.use("/api/attendance-requests", require("./routes/attendanceRequest.routes"));
+app.use("/api/projects", require("./routes/project.routes"));
 
 
 // ============================
@@ -55,7 +57,7 @@ app.get('/', (req, res) => {
 // ============================
 const PORT = process.env.PORT || 5001;
 
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
 

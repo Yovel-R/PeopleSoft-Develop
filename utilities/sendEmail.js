@@ -1,9 +1,14 @@
 const { Resend } = require("resend");
 
 // Logo hosted as a static asset — served via express.static('public')
-const LOGO_URL = `${process.env.BACKEND_URL}/assets/images/softrate-logo.jpg`;
+const getLogoUrl = () => {
+  const baseUrl = process.env.BACKEND_URL || "http://localhost:5001";
+  return `${baseUrl.replace(/\/$/, '')}/assets/images/softrate-logo.jpg`;
+};
 
 const sendEmail = async ({ to, subject, html, text, attachments = [] }) => {
+  const LOGO_URL = getLogoUrl();
+  console.log("Using Logo URL for email:", LOGO_URL);
   try {
     const resend = new Resend(process.env.RESEND_API_KEY);
     const fromEmail = process.env.FROM_EMAIL || "onboarding@resend.dev";
@@ -41,4 +46,4 @@ const sendEmail = async ({ to, subject, html, text, attachments = [] }) => {
   }
 };
 
-module.exports = { sendEmail, LOGO_URL };
+module.exports = { sendEmail, getLogoUrl };

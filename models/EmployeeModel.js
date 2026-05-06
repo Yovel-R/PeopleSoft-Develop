@@ -14,6 +14,7 @@ const EmployeeSchema = new mongoose.Schema({
   dob: Date,
   address: String,
   role: String,
+  department: String,
   linkedin: String,
   gender: String,
   nationality: String,
@@ -40,6 +41,10 @@ const EmployeeSchema = new mongoose.Schema({
   bgConsent: { type: Boolean, default: false },
   whatsappConsent: { type: Boolean, default: false },
 
+  isManager: { type: Boolean, default: false },
+  assignedManager: { type: mongoose.Schema.Types.ObjectId, ref: "Employee", default: null },
+  managerApprovalStatus: { type: String, enum: ['pending', 'approved', 'rejected', null], default: null },
+  managerRemarks: { type: String, default: "" },
   submittedAt: { type: Date, default: Date.now },
 });
 

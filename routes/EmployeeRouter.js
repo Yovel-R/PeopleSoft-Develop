@@ -73,7 +73,7 @@ router.get("/all/initial", async (req, res) => {
 ============================ */
 router.get("/all/active", async (req, res) => {
   try {
-    const { range = "thisMonth", status = "all" } = req.query;
+    const { range = "all", status = "all" } = req.query;
 
     const statusFilter = status === "all" ? ["approved", "ongoing"] : [status];
 
@@ -99,16 +99,56 @@ router.get("/all/active", async (req, res) => {
       query.submittedAt = { $gte: start, $lte: end };
     }
 
-    console.log("Query:", JSON.stringify(query)); // Debug log
+    console.log("Request URL:", req.originalUrl);
+    console.log("Query Params:", req.query);
+    console.log("DB Query:", JSON.stringify(query));
 
     const employees = await Employee.find(query)
-      .select('EmployeeId fullName status role submittedAt') // Limit fields
-      .sort({ submittedAt: -1 }); // ✅ Sort by submittedAt
+      .select('EmployeeId fullName email department designation status role phone onboardingDate isManager submittedAt')
+      .sort({ submittedAt: -1 });
 
-    console.log(`Found ${employees.length} employees`); // Debug log
+    console.log(`Found ${employees.length} employees`);
+    if (employees.length > 0) {
+      console.log("First Employee Sample:", JSON.stringify(employees[0]));
+    }
     res.json(employees);
   } catch (err) {
     console.error("Fetch Active Employees Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/* ============================
+   GET SINGLE EMPLOYEE
+============================ */
+router.get("/get/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`[DEBUG] Fetching employee with ID: ${id}`);
+    
+    let employee;
+    
+    // 1. Try finding by MongoDB ObjectId first
+    if (id.match(/^[0-9a-fA-F]{24}$/)) {
+      employee = await Employee.findById(id);
+    } 
+    
+    // 2. If not found or not an ObjectId, try finding by custom EmployeeId (case-insensitive)
+    if (!employee) {
+      employee = await Employee.findOne({ 
+        EmployeeId: { $regex: new RegExp(`^${id}$`, 'i') } 
+      });
+    }
+
+    if (!employee) {
+      console.log(`[DEBUG] Employee NOT found for ID: ${id}`);
+      return res.status(404).json({ message: "Employee not found" });
+    }
+    
+    console.log(`[DEBUG] Employee found: ${employee.fullName} (${employee.EmployeeId || 'No custom ID'})`);
+    res.json({ employee });
+  } catch (err) {
+    console.error("Fetch Single Employee Error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
@@ -172,8 +212,9 @@ router.put("/accept/:id", async (req, res) => {
     res.status(500).json({ message: "Server error", error: err.message });
   }
 });
+
 /* ============================
-   REJECT EMPLOYEE
+   REJECT EMPLOYEE / DELETE
 ============================ */
 router.delete("/delete/:id", async (req, res) => {
   try {
@@ -189,50 +230,80 @@ router.delete("/delete/:id", async (req, res) => {
   }
 });
 
+// Alias for delete to match some frontend calls
+router.delete("/reject/:id", async (req, res) => {
+  try {
+    const employee = await Employee.findByIdAndDelete(req.params.id);
+    if (!employee) return res.status(404).json({ message: "Employee not found" });
+    res.json({ message: "Employee rejected/deleted", employee });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error });
+  }
+});
 
 /* ============================
-   LOGIN (SAME AS INTERN)
+   MANAGER LOGIN (BY EMAIL)
+============================ */
+router.post("/manager/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const manager = await Employee.findOne({ email: { $regex: new RegExp(`^${email}$`, 'i') }, isManager: true });
+
+    if (!manager) {
+      return res.status(404).json({ message: "Manager not found or unauthorized" });
+    }
+
+    if (!manager.password) {
+      manager.password = password;
+      await manager.save();
+      return res.json({ message: "First-time password set", firstTime: true, manager });
+    }
+
+    if (manager.password !== password) {
+      return res.status(401).json({ message: "Wrong password" });
+    }
+
+    res.json({ message: "Login successful", firstTime: false, manager });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+});
+
+/* ============================
+   LOGIN (BY EMPLOYEE ID)
 ============================ */
 router.post("/login", async (req, res) => {
-  const { employeeId, password } = req.body;
+  try {
+    const { employeeId, password } = req.body;
+    console.log(`[DEBUG] Login attempt for EmployeeId: ${employeeId}`);
 
-  const employee = await Employee.findOne({ EmployeeId: employeeId });
-  if (!employee) {
-    return res.status(404).json({ message: "Employee not found" });
-  }
-
-  if (!employee.password) {
-    employee.password = password;
-    await employee.save();
-    return res.json({
-      message: "Password set",
-      firstTime: true,
-      employee,
+    const employee = await Employee.findOne({ 
+      EmployeeId: { $regex: new RegExp(`^${employeeId}$`, 'i') } 
     });
-  }
 
-  if (employee.password !== password) {
-    return res.status(401).json({ message: "Wrong password" });
-  }
+    if (!employee) {
+      return res.status(404).json({ message: "Employee not found" });
+    }
 
-  res.json({ message: "Login successful", firstTime: false, employee });
+    if (!employee.password) {
+      employee.password = password;
+      await employee.save();
+      return res.json({
+        message: "Password set",
+        firstTime: true,
+        employee,
+      });
+    }
+
+    if (employee.password !== password) {
+      return res.status(401).json({ message: "Wrong password" });
+    }
+
+    res.json({ message: "Login successful", firstTime: false, employee });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
 });
-
-/* ============================
-   GET EMPLOYEE BY ID
-============================ */
-router.get("/get/:employeeId", async (req, res) => {
-  const employee = await Employee.findOne({
-    EmployeeId: req.params.employeeId,
-  });
-
-  if (!employee) {
-    return res.status(404).json({ message: "Employee not found" });
-  }
-
-  res.json({ employee });
-});
-
 
 /* ============================
    EMPLOYEE ID GENERATOR
@@ -378,5 +449,27 @@ router.get("/export/excel/all-employees", async (req, res) => {
   }
 });
 
+
+// Toggle Manager Status
+router.put("/toggle-manager/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const employee = await Employee.findById(id);
+    if (!employee) {
+      return res.status(404).json({ message: "Employee not found" });
+    }
+
+    employee.isManager = !employee.isManager;
+    await employee.save();
+
+    res.json({ 
+      message: `Employee ${employee.isManager ? 'promoted to' : 'removed from'} manager role`,
+      isManager: employee.isManager 
+    });
+  } catch (err) {
+    console.error("Toggle Manager Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 
 module.exports = router;
