@@ -13,12 +13,10 @@ router.post("/punch-in", async (req, res) => {
   try {
     const { internId, location } = req.body;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // Start of today
-    const todayEnd = new Date(today);
-    todayEnd.setHours(23, 59, 59, 999); // End of today
-
-    const todayStr = today.toISOString().slice(0, 10); // yyyy-mm-dd
+    const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const today = new Date(todayStr);
+    const todayEnd = new Date(todayStr);
+    todayEnd.setUTCHours(23, 59, 59, 999);
 
     // ✅ 1. CHECK HOLIDAY FIRST
     // Special holidays
@@ -35,10 +33,10 @@ router.post("/punch-in", async (req, res) => {
     }
 
     // Weekly holidays
-    const dayOfWeek = today.getDay(); // 0=Sun, 1=Mon...
+    const dayOfWeek = today.getUTCDay(); // 0=Sun, 1=Mon...
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const dayName = dayNames[dayOfWeek];
-    const weekNum = Math.ceil(today.getDate() / 7);
+    const weekNum = Math.ceil(today.getUTCDate() / 7);
 
     const weeklyHoliday = await Holiday.findOne({
       type: "weekly",
@@ -85,7 +83,7 @@ router.post("/punch-out", async (req, res) => {
   try {
     const { internId, location } = req.body;
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
     let record = await Attendance.findOne({ internId, date: today });
 
@@ -212,7 +210,7 @@ router.get("/today/all", async (req, res) => {
 // 📌 Get Today's Attendance (FIXED)
 router.get("/today/:internId", async (req, res) => {
   const { internId } = req.params;
-  const today = new Date().toISOString().slice(0, 10); // UTC date
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const record = await Attendance.findOne({ internId, date: today });
   console.log("Today attendance record:", record);
   res.json({ record });
@@ -546,7 +544,7 @@ router.get("/trend", async (req, res) => {
     for (let i = 6; i >= 0; i--) {
       const date = new Date();
       date.setDate(date.getDate() - i);
-      const dateStr = date.toISOString().slice(0, 10);
+      const dateStr = date.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
       
       const count = await Attendance.countDocuments({ date: dateStr, punchInTime: { $exists: true } });
       trend.push({

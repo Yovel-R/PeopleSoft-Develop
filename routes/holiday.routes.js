@@ -10,7 +10,6 @@ router.post("/", async (req, res) => {
     if (type === "weekly" && day) {
       const newWeeks = Array.isArray(weeks) ? weeks : [];
 
-      // CASE 1: DELETE ALL (empty weeks)
       if (newWeeks.length === 0) {
         const deleted = await Holiday.findOneAndDelete({ type: "weekly", day });
         if (deleted) {
@@ -23,50 +22,48 @@ router.post("/", async (req, res) => {
         }
       }
 
-      // CASE 2: REPLACE with new weeks selection
-      // Delete existing holiday for this day
       await Holiday.findOneAndDelete({ type: "weekly", day });
-      
-      // Create NEW holiday with ONLY selected weeks
       const holiday = new Holiday({
         type: "weekly",
         day,
-        weeks: newWeeks  // ONLY selected weeks [1,5]
+        weeks: newWeeks
       });
-      
       await holiday.save();
-      
-      return res.status(201).json({ 
-        message: "Weekly holidays updated", 
-        holiday 
-      });
+      return res.status(201).json({ message: "Weekly holidays updated", holiday });
     }
 
-    // Special holiday logic (unchanged)
     if (type === "special" && fromDate && toDate && reason) {
       const from = new Date(fromDate);
       const to = new Date(toDate);
       
-      const overlappingHoliday = await Holiday.findOne({
-        type: "special",
-        $or: [{ fromDate: { $lte: to }, toDate: { $gte: from } }]
-      });
-
-      if (overlappingHoliday) {
-        return res.status(400).json({ 
-          message: `Date range overlaps with existing holiday: ${overlappingHoliday.reason}` 
-        });
-      }
-
       const holiday = new Holiday({ type, fromDate: from, toDate: to, reason });
       await holiday.save();
-      
       return res.status(201).json({ message: "Special holiday added", holiday });
     }
 
     res.status(400).json({ message: "Invalid data" });
   } catch (err) {
     res.status(500).json({ message: err.message });
+  }
+});
+
+// 📤 Bulk add holidays
+router.post("/bulk", async (req, res) => {
+  try {
+    const holidays = req.body;
+    if (!Array.isArray(holidays)) {
+      return res.status(400).json({ message: "Expected an array of holidays" });
+    }
+
+    const results = await Holiday.insertMany(holidays, { ordered: false });
+    res.status(201).json({ message: `${results.length} holidays added`, results });
+  } catch (err) {
+    // Some might have succeeded even if others failed (ordered: false)
+    res.status(207).json({ 
+      message: "Partial success or bulk error", 
+      error: err.message,
+      insertedCount: err.result?.nInserted || 0
+    });
   }
 });
 
@@ -146,10 +143,15 @@ router.delete("/:id", async (req, res) => {
 // ✅ CHECK IF TODAY IS HOLIDAY
 router.get("/is-today-holiday", async (req, res) => {
   try {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // Start of today
+    const now = new Date();
+    const todayStr = now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const today = new Date(Date.UTC(
+      parseInt(todayStr.split("-")[0]),
+      parseInt(todayStr.split("-")[1]) - 1,
+      parseInt(todayStr.split("-")[2])
+    ));
     const todayEnd = new Date(today);
-    todayEnd.setHours(23, 59, 59, 999); // End of today
+    todayEnd.setUTCHours(23, 59, 59, 999);
 
     // Check special holidays first
     const specialHoliday = await Holiday.findOne({
@@ -167,11 +169,11 @@ router.get("/is-today-holiday", async (req, res) => {
     }
 
     // Check weekly holidays
-    const dayOfWeek = today.getDay(); // 0=Sun, 1=Mon, ...
+    const dayOfWeek = today.getUTCDay(); // 0=Sun, 1=Mon, ...
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const dayName = dayNames[dayOfWeek];
 
-    const weekNum = Math.ceil(today.getDate() / 7); // 1st, 2nd, 3rd, 4th, 5th week
+    const weekNum = Math.ceil(today.getUTCDate() / 7); // 1st, 2nd, 3rd, 4th, 5th week
     const weeklyHoliday = await Holiday.findOne({
       type: "weekly",
       day: dayName,

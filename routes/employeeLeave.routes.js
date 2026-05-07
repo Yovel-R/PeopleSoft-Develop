@@ -5,6 +5,7 @@ const EmployeeLeave = require("../models/employeeLeave.model");
 const LeaveCounter = require("../models/leaveCounter.model");
 const Intern = require("../models/Intern");
 const Employee = require("../models/EmployeeModel");
+const Leave = require("../models/leave.model"); // legacy intern leaves
 
 /* ============================
    APPLY LEAVE
@@ -16,8 +17,8 @@ router.post("/apply", async (req, res) => {
     const fromDate = new Date(data.fromDate);
     const toDate = new Date(data.toDate);
 
-    const fromDay = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
-    const toDay = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate());
+    const fromDay = new Date(Date.UTC(fromDate.getUTCFullYear(), fromDate.getUTCMonth(), fromDate.getUTCDate()));
+    const toDay = new Date(Date.UTC(toDate.getUTCFullYear(), toDate.getUTCMonth(), toDate.getUTCDate()));
 
     // 1. Overlapping Leave Check
     const overlapping = await EmployeeLeave.find({
@@ -47,8 +48,8 @@ router.post("/apply", async (req, res) => {
 
     if (intern) {
       // Intern Limit: 2 days per month
-      const monthStart = new Date(fromDay.getFullYear(), fromDay.getMonth(), 1);
-      const monthEnd = new Date(fromDay.getFullYear(), fromDay.getMonth() + 1, 0, 23, 59, 59);
+      const monthStart = new Date(Date.UTC(fromDay.getUTCFullYear(), fromDay.getUTCMonth(), 1));
+      const monthEnd = new Date(Date.UTC(fromDay.getUTCFullYear(), fromDay.getUTCMonth() + 1, 0, 23, 59, 59));
       const monthlyLeaves = await EmployeeLeave.find({
         employeeId: data.employeeId,
         hrStatus: { $ne: "rejected" },
@@ -215,9 +216,34 @@ router.get("/:employeeId", async (req, res) => {
 
 router.get("/employee/:employeeId", async (req, res) => {
   try {
-    const leaves = await EmployeeLeave.find({ employeeId: req.params.employeeId }).sort({ fromDate: -1 });
-    res.json(leaves);
+    const { employeeId } = req.params;
+    
+    // Fetch from both collections
+    const [employeeLeaves, legacyLeaves] = await Promise.all([
+      EmployeeLeave.find({ employeeId }).lean(),
+      Leave.find({ internId: employeeId }).lean()
+    ]);
+
+    // Map legacy leaves to the new format if needed
+    const normalizedLegacy = legacyLeaves.map(l => ({
+      ...l,
+      _id: l._id.toString(),
+      employeeId: l.internId,
+      employeeName: l.internName,
+      managerStatus: l.managerStatus || l.status || "pending",
+      hrStatus: l.hrStatus || l.status || "pending",
+      isLegacy: true
+    }));
+
+    const combined = [...employeeLeaves, ...normalizedLegacy].sort((a, b) => {
+      const dateA = a.fromDate instanceof Date ? a.fromDate : new Date(a.fromDate);
+      const dateB = b.fromDate instanceof Date ? b.fromDate : new Date(b.fromDate);
+      return dateB - dateA;
+    });
+
+    res.json(combined);
   } catch (err) {
+    console.error("Fetch employee leaves error:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
@@ -241,8 +267,8 @@ router.get("/count/:employeeId", async (req, res) => {
       return res.status(400).json({ success: false, message: "Month and Year are required." });
     }
 
-    const startOfMonth = new Date(year, month - 1, 1);
-    const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
+    const startOfMonth = new Date(Date.UTC(year, month - 1, 1));
+    const endOfMonth = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
 
     const leaves = await EmployeeLeave.find({
       employeeId,

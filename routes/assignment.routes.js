@@ -72,12 +72,12 @@ router.get('/team/:managerId', async (req, res) => {
     const interns = await Intern.find({ 
       assignedManager: managerId,
       status: { $in: ['approved', 'ongoing'] }
-    }).select('fullName _id role department college email phone createdAt status onboardingDate internid');
+    }).select('fullName _id role department college email phone contact emergencyContact year onboardingDate endDate internshipType linkedin internid');
     
     const employees = await Employee.find({ 
       assignedManager: managerId,
       status: { $in: ['approved', 'ongoing', 'active'] }
-    }).select('fullName _id role department EmployeeId email phone onboardingDate status');
+    }).select('fullName _id role department EmployeeId email phone onboardingDate status qualification specialization college passingYear ugCgpa pgCgpa experienceYears emergencyPhone dob gender address linkedin');
 
     res.json({
       interns,

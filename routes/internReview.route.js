@@ -28,12 +28,21 @@ router.post("/submit-review", async (req, res) => {
       });
     }
 
-    const today = new Date();
-    if (today.getDate() <= 5) {
-      today.setMonth(today.getMonth() - 1);
+    const now = new Date();
+    const dateStr = now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const parts = dateStr.split("-");
+    let year = parseInt(parts[0]);
+    let month = parseInt(parts[1]);
+    const day = parseInt(parts[2]);
+
+    if (day <= 5) {
+      month--;
+      if (month === 0) {
+        month = 12;
+        year--;
+      }
     }
-    const dateStr = today.toISOString().split("T")[0];
-    const monthStr = dateStr.slice(0, 7);
+    const monthStr = `${year}-${String(month).padStart(2, "0")}`;
 
     const existing = await Review.findOne({
       internId,
@@ -86,12 +95,20 @@ router.get("/self/:internId", async (req, res) => {
     const { internId } = req.params;
 
     const now = new Date();
-    if (now.getDate() <= 5) {
-      now.setMonth(now.getMonth() - 1);
+    const dateStr = now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const parts = dateStr.split("-");
+    let year = parseInt(parts[0]);
+    let month = parseInt(parts[1]);
+    const day = parseInt(parts[2]);
+
+    if (day <= 5) {
+      month--;
+      if (month === 0) {
+        month = 12;
+        year--;
+      }
     }
-    const monthStr = `${now.getFullYear()}-${String(
-      now.getMonth() + 1
-    ).padStart(2, "0")}`;
+    const monthStr = `${year}-${String(month).padStart(2, "0")}`;
 
     const review = await Review.findOne({
       internId,

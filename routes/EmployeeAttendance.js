@@ -17,11 +17,10 @@ router.post("/punch-in", async (req, res) => {
   try {
     const { employeeId, location } = req.body;
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0); // Start of today
-    const todayEnd = new Date(today);
-    todayEnd.setHours(23, 59, 59, 999); // End of today
-    const todayStr = today.toISOString().slice(0, 10);
+    const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const today = new Date(todayStr);
+    const todayEnd = new Date(todayStr);
+    todayEnd.setUTCHours(23, 59, 59, 999);
 
     // ✅ 1. HOLIDAY CHECK - SPECIAL HOLIDAYS
     const specialHoliday = await Holiday.findOne({
@@ -37,10 +36,10 @@ router.post("/punch-in", async (req, res) => {
     }
 
     // ✅ 2. HOLIDAY CHECK - WEEKLY HOLIDAYS
-    const dayOfWeek = today.getDay(); // 0=Sun, 1=Mon...
+    const dayOfWeek = today.getUTCDay(); // 0=Sun, 1=Mon...
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const dayName = dayNames[dayOfWeek];
-    const weekNum = Math.ceil(today.getDate() / 7);
+    const weekNum = Math.ceil(today.getUTCDate() / 7);
 
     const weeklyHoliday = await Holiday.findOne({
       type: "weekly",
@@ -87,11 +86,10 @@ router.post("/punch-out", async (req, res) => {
     const { employeeId, location } = req.body;
 
     // ✅ SAME HOLIDAY CHECK as punch-in
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayEnd = new Date(today);
-    todayEnd.setHours(23, 59, 59, 999);
-    const todayStr = today.toISOString().slice(0, 10);
+    const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const today = new Date(todayStr);
+    const todayEnd = new Date(todayStr);
+    todayEnd.setUTCHours(23, 59, 59, 999);
 
     const specialHoliday = await Holiday.findOne({
       type: "special",
@@ -105,10 +103,10 @@ router.post("/punch-out", async (req, res) => {
       });
     }
 
-    const dayOfWeek = today.getDay();
+    const dayOfWeek = today.getUTCDay();
     const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const dayName = dayNames[dayOfWeek];
-    const weekNum = Math.ceil(today.getDate() / 7);
+    const weekNum = Math.ceil(today.getUTCDate() / 7);
 
     const weeklyHoliday = await Holiday.findOne({
       type: "weekly",
@@ -172,7 +170,7 @@ router.get("/employee/:id", async (req, res) => {
 ====================== */
 router.get("/today/:employeeId", async (req, res) => {
   const { employeeId } = req.params;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
   const record = await Attendance.findOne({ employeeId, date: today });
 
@@ -500,7 +498,7 @@ router.get("/trend", async (req, res) => {
     for (let i = 6; i >= 0; i--) {
       const date = new Date();
       date.setDate(date.getDate() - i);
-      const dateStr = date.toISOString().slice(0, 10);
+      const dateStr = date.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
       
       const count = await Attendance.countDocuments({ date: dateStr, punchInTime: { $exists: true } });
       trend.push({

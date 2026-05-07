@@ -11,20 +11,20 @@ router.post("/apply", async (req, res) => {
     const fromDate = new Date(data.fromDate);
     const toDate   = new Date(data.toDate);
 
-    const fromDay = new Date(fromDate.getFullYear(), fromDate.getMonth(), fromDate.getDate());
-    const toDay   = new Date(toDate.getFullYear(),   toDate.getMonth(),   toDate.getDate());
+    const fromDay = new Date(Date.UTC(fromDate.getUTCFullYear(), fromDate.getUTCMonth(), fromDate.getUTCDate()));
+    const toDay   = new Date(Date.UTC(toDate.getUTCFullYear(),   toDate.getUTCMonth(),   toDate.getUTCDate()));
 
     const numberOfDays = Number(data.numberOfDays);
 
     // 1. Intern Leave Limit Logic (Enforce 2 days per month)
     const intern = await Intern.findOne({ internid: internId });
     if (intern) {
-      const year = fromDay.getFullYear();
-      const month = fromDay.getMonth(); // 0-indexed
+      const year = fromDay.getUTCFullYear();
+      const month = fromDay.getUTCMonth(); // 0-indexed
 
       // Start and end of the target month
-      const startOfMonth = new Date(year, month, 1);
-      const endOfMonth = new Date(year, month + 1, 0, 23, 59, 59, 999);
+      const startOfMonth = new Date(Date.UTC(year, month, 1));
+      const endOfMonth = new Date(Date.UTC(year, month + 1, 0, 23, 59, 59, 999));
 
       // Query all non-rejected leaves for this intern in the same month
       const existingLeaves = await Leave.find({
@@ -136,8 +136,8 @@ router.get("/count/:internId", async (req, res) => {
       return res.status(400).json({ success: false, message: "Month and Year are required." });
     }
 
-    const startOfMonth = new Date(year, month - 1, 1);
-    const endOfMonth = new Date(year, month, 0, 23, 59, 59, 999);
+    const startOfMonth = new Date(Date.UTC(year, month - 1, 1));
+    const endOfMonth = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999));
 
     const leaves = await Leave.find({
       internId,

@@ -99,7 +99,7 @@ router.put("/hr-review/:id", async (req, res) => {
     if (status === "approved") {
       // UPDATE THE ACTUAL ATTENDANCE RECORD
       const targetDate = new Date(request.date);
-      const dateStr = targetDate.toISOString().split('T')[0];
+      const dateStr = targetDate.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
       // Find or create attendance record for that date
       let attendance = await Attendance.findOne({ 
