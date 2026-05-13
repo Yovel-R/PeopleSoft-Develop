@@ -1,24 +1,43 @@
 const hrModel = require("../models/hr_models");
+const Company = require("../models/CompanyModel");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 
 // HR Signup
 exports.hrSignup = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, companyName, companyCode } = req.body;
 
     const existingUser = await hrModel.findOne({ email });
     if (existingUser) {
       return res.status(400).json({ msg: "Email already exists" });
     }
 
-    const newHR = new hrModel({ name, email, password });
+    let companyId = null;
+    if (companyName && companyCode) {
+      let company = await Company.findOne({ companyCode });
+      if (company) {
+        return res.status(400).json({ msg: "Company code already exists" });
+      }
+      company = new Company({ name: companyName, companyCode });
+      await company.save();
+      companyId = company._id;
+    } else {
+      return res.status(400).json({ msg: "Company name and code are required for signup" });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    const newHR = new hrModel({ name, email, password: hashedPassword, companyId });
     await newHR.save();
 
     res.status(201).json({
       msg: "HR Registered Successfully",
-      user: newHR
+      user: { _id: newHR._id, name: newHR.name, email: newHR.email, companyId: newHR.companyId }
     });
   } catch (err) {
-    res.status(500).json({ msg: "Server error", error: err });
+    res.status(500).json({ msg: "Server error", error: err.message });
   }
 };
 
@@ -32,16 +51,48 @@ exports.hrLogin = async (req, res) => {
       return res.status(404).json({ msg: "User not found" });
     }
 
-    if (user.password !== password) {
+    let isMatch = false;
+    // Check if password is plain text (legacy) or hashed
+    if (user.password.length === 60 || user.password.startsWith('$2a$') || user.password.startsWith('$2b$')) {
+        isMatch = await bcrypt.compare(password, user.password);
+    } else {
+        isMatch = (user.password === password);
+        // Optional: Hash the plain text password and save it
+        if (isMatch) {
+            const salt = await bcrypt.genSalt(10);
+            user.password = await bcrypt.hash(password, salt);
+            await user.save();
+        }
+    }
+
+    if (!isMatch) {
       return res.status(400).json({ msg: "Invalid password" });
     }
 
-    res.status(200).json({
-      msg: "Login successful",
-      user
-    });
+    const payload = {
+      user: {
+        id: user.id,
+        companyId: user.companyId,
+        role: 'hr'
+      }
+    };
+
+    jwt.sign(
+      payload,
+      process.env.JWT_SECRET || 'fallback_secret_key',
+      { expiresIn: '1d' },
+      (err, token) => {
+        if (err) throw err;
+        res.status(200).json({
+          msg: "Login successful",
+          token,
+          user: { _id: user._id, name: user.name, email: user.email, companyId: user.companyId }
+        });
+      }
+    );
+
   } catch (err) {
-    res.status(500).json({ msg: "Server error", error: err });
+    res.status(500).json({ msg: "Server error", error: err.message });
   }
 };
 
@@ -108,6 +159,7 @@ exports.getPolicyUrl = async (req, res) => {
 // Get HR Policy URL for Interns
 exports.getPolicyForInterns = async (req, res) => {
   try {
+    // Note: In multi-tenant, this should be scoped by companyId!
     const hrUser = await hrModel.findOne().select("hr_policy_url policy_updated_at");
 
     if (!hrUser || !hrUser.hr_policy_url) {
@@ -116,11 +168,10 @@ exports.getPolicyForInterns = async (req, res) => {
 
     res.json({
       success: true,
-      policy_url: hrUser.hr_policy_url.trim(), // trim newline
+      policy_url: hrUser.hr_policy_url.trim(),
       policy_updated_at: hrUser.policy_updated_at
     });
   } catch (err) {
     res.status(500).json({ success: false, msg: "Server error", error: err.message });
   }
 };
-

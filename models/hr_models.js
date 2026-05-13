@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 
 const hrSchema = new mongoose.Schema({
+  companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
   name: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },

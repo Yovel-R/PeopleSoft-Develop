@@ -1,9 +1,10 @@
 const express = require("express");
 const router = express.Router();
+const verifyTenant = require("../middleware/tenant.middleware");
 const EmployeeResignation = require("../models/employee-resignation-model");
 
 // Employee submit resignation
-router.post("/", async (req, res) => {
+router.post("/", verifyTenant, async (req, res) => {
   try {
     const {
       employeeId,
@@ -64,7 +65,7 @@ router.post("/", async (req, res) => {
 });
 
 // HR: List all resignations with status filter
-router.get("/", async (req, res) => {
+router.get("/", verifyTenant, async (req, res) => {
   try {
     const { status } = req.query;
     const query = {};
@@ -92,7 +93,7 @@ router.get("/", async (req, res) => {
 });
 
 // HR: Update resignation status (unified endpoint)
-router.patch("/:id/status", async (req, res) => {
+router.patch("/:id/status", verifyTenant, async (req, res) => {
   try {
     const { id } = req.params;
     const { status, rejectionReason } = req.body;
@@ -144,7 +145,7 @@ router.patch("/:id/status", async (req, res) => {
 });
 
 // HR: Get single resignation details
-router.get("/:id", async (req, res) => {
+router.get("/:id", verifyTenant, async (req, res) => {
   try {
     const { id } = req.params;
     const resignation = await EmployeeResignation.findById(id).lean();

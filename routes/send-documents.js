@@ -3,11 +3,14 @@ const multer = require("multer");
 const { sendEmail } = require("../utilities/sendEmail");
 const router = express.Router();
 
+const verifyTenant = require("../middleware/tenant.middleware");
+
 const upload = multer({ storage: multer.memoryStorage() }); // store files in RAM
 
 // SEND EMAIL API
 router.post(
   "/send-documents",
+  verifyTenant,
   upload.array("files"), // receives: files[]
   async (req, res) => {
     try {
@@ -22,7 +25,7 @@ router.post(
 
       // Call our resend utility
       await sendEmail({
-        to: process.env.RECIVER_EMAIL_USER,
+        to: req.tenant.receivingEmail,
         subject: `Intern Documents - ${internName} (${internId})`,
         html: `
           <p>Hi Admin,</p>

@@ -1,4 +1,5 @@
 const express = require("express");
+const verifyTenant = require("../middleware/tenant.middleware");
 const Attendance = require("../models/Employeeattendancemodel");
 const PDFDocument = require("pdfkit");
 const moment = require("moment");
@@ -13,9 +14,10 @@ const router = express.Router();
    📌 Punch In
 ====================== */
 
-router.post("/punch-in", async (req, res) => {
+router.post("/punch-in", verifyTenant, async (req, res) => {
   try {
-    const { employeeId, location } = req.body;
+    const employeeId = req.body.employeeId || req.body.id || req.user.id;
+    const { location } = req.body;
 
     const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     const today = new Date(todayStr);
@@ -62,6 +64,7 @@ router.post("/punch-in", async (req, res) => {
 
     if (!record) {
       record = new Attendance({
+        companyId: req.tenant.companyId,
         employeeId,
         date: todayStr,
       });
@@ -73,17 +76,18 @@ router.post("/punch-in", async (req, res) => {
 
     res.json({ message: "Punch In successful", record });
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: "Server error" });
+    console.log("Punch In Error:", err);
+    res.status(500).json({ message: "Server error: " + err.message });
   }
 });
 
 /* ======================
    📌 Punch Out - WITH HOLIDAY CHECK
 ====================== */
-router.post("/punch-out", async (req, res) => {
+router.post("/punch-out", verifyTenant, async (req, res) => {
   try {
-    const { employeeId, location } = req.body;
+    const employeeId = req.body.employeeId || req.body.id || req.user.id;
+    const { location } = req.body;
 
     // ✅ SAME HOLIDAY CHECK as punch-in
     const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -142,15 +146,15 @@ router.post("/punch-out", async (req, res) => {
     await record.save();
     res.json({ message: "Punch Out successful", record });
   } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: "Server error" });
+    console.log("Punch Out Error:", err);
+    res.status(500).json({ message: "Server error: " + err.message });
   }
 });
 
 /* ======================
    📌 Get Attendance by Employee ID
 ====================== */
-router.get("/employee/:id", async (req, res) => {
+router.get("/employee/:id", verifyTenant, async (req, res) => {
   try {
     const employeeId = req.params.id;
 
@@ -168,8 +172,11 @@ router.get("/employee/:id", async (req, res) => {
 /* ======================
    📌 Get Today's Attendance
 ====================== */
-router.get("/today/:employeeId", async (req, res) => {
-  const { employeeId } = req.params;
+router.get("/today/:employeeId", verifyTenant, async (req, res) => {
+  let { employeeId } = req.params;
+  if (employeeId === 'me' || !employeeId) {
+    employeeId = req.user.id;
+  }
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
   const record = await Attendance.findOne({ employeeId, date: today });
@@ -183,7 +190,7 @@ router.get("/today/:employeeId", async (req, res) => {
 /* ======================
    📌 Export Attendance PDF
 ====================== */
-router.get("/export/pdf/employee/:employeeId", async (req, res) => {
+router.get("/export/pdf/employee/:employeeId", verifyTenant, async (req, res) => {
   try {
     const { employeeId } = req.params;
     const { from, to } = req.query;
@@ -315,7 +322,7 @@ router.get("/export/pdf/employee/:employeeId", async (req, res) => {
 
 
 
-router.get("/export/excel/all", async (req, res) => {
+router.get("/export/excel/all", verifyTenant, async (req, res) => {
   try {
     const { from, to } = req.query;
     if (!from || !to) {
@@ -423,7 +430,7 @@ router.get("/export/excel/all", async (req, res) => {
   }
 });
 
-router.get("/employee/today/all", async (req, res) => {
+router.get("/employee/today/all", verifyTenant, async (req, res) => {
   try {
     const today = new Date().toLocaleDateString("en-CA", {
       timeZone: "Asia/Kolkata",
@@ -492,7 +499,7 @@ router.get("/employee/today/all", async (req, res) => {
 /* ======================
    📌 Get Attendance Trend (Last 7 Days)
 ====================== */
-router.get("/trend", async (req, res) => {
+router.get("/trend", verifyTenant, async (req, res) => {
   try {
     const trend = [];
     for (let i = 6; i >= 0; i--) {

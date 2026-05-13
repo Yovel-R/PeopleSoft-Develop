@@ -1,11 +1,12 @@
 const express = require("express");
 const router = express.Router();
+const verifyTenant = require("../middleware/tenant.middleware");
 const AttendanceRequest = require("../models/attendanceRequest.model");
 const Intern = require("../models/Intern");
 const Attendance = require("../models/attendancemodel");
 
 // 1. Intern Apply for Correction
-router.post("/apply", async (req, res) => {
+router.post("/apply", verifyTenant, async (req, res) => {
   try {
     const { internMongoId, date, requestedPunchIn, requestedPunchOut, reason } = req.body;
     
@@ -13,15 +14,15 @@ router.post("/apply", async (req, res) => {
     const intern = await Intern.findById(internMongoId);
     if (!intern) return res.status(404).json({ success: false, message: "Intern not found" });
     
-    if (!intern.assignedManager) {
-      return res.status(400).json({ success: false, message: "No manager assigned to this intern. Cannot apply for correction." });
-    }
+    // If no manager is assigned, we skip manager approval
+    const managerApprovalStatus = intern.assignedManager ? "pending" : "approved";
 
     const request = new AttendanceRequest({
       internId: intern.internid,
       internMongoId,
       internName: intern.fullName,
-      managerMongoId: intern.assignedManager,
+      managerMongoId: intern.assignedManager || null,
+      managerApprovalStatus,
       date: new Date(date),
       requestedPunchIn,
       requestedPunchOut,
@@ -36,7 +37,7 @@ router.post("/apply", async (req, res) => {
 });
 
 // 2. Get Requests for Manager
-router.get("/manager/:managerId", async (req, res) => {
+router.get("/manager/:managerId", verifyTenant, async (req, res) => {
   try {
     const requests = await AttendanceRequest.find({ 
       managerMongoId: req.params.managerId,
@@ -49,7 +50,7 @@ router.get("/manager/:managerId", async (req, res) => {
 });
 
 // 3. Manager Review
-router.put("/manager-review/:id", async (req, res) => {
+router.put("/manager-review/:id", verifyTenant, async (req, res) => {
   try {
     const { status, remarks } = req.body; // status: 'approved' or 'rejected'
     const request = await AttendanceRequest.findById(req.params.id);
@@ -73,7 +74,7 @@ router.put("/manager-review/:id", async (req, res) => {
 });
 
 // 4. Get Requests for HR (Only those approved by Manager)
-router.get("/hr-pending", async (req, res) => {
+router.get("/hr-pending", verifyTenant, async (req, res) => {
   try {
     const requests = await AttendanceRequest.find({ 
       managerApprovalStatus: "approved",
@@ -86,7 +87,7 @@ router.get("/hr-pending", async (req, res) => {
 });
 
 // 5. HR Review (Final)
-router.put("/hr-review/:id", async (req, res) => {
+router.put("/hr-review/:id", verifyTenant, async (req, res) => {
   try {
     const { status, remarks } = req.body;
     const request = await AttendanceRequest.findById(req.params.id);
@@ -131,7 +132,7 @@ router.put("/hr-review/:id", async (req, res) => {
 });
 
 // 6. Get Intern's own requests
-router.get("/intern/:internMongoId", async (req, res) => {
+router.get("/intern/:internMongoId", verifyTenant, async (req, res) => {
   try {
     const requests = await AttendanceRequest.find({ internMongoId: req.params.internMongoId }).sort({ createdAt: -1 });
     res.status(200).json(requests);

@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 
 const employeeTerminationSchema = new mongoose.Schema({
-  employeeId: {
+  
+  companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },employeeId: {
     type: String,
     required: true,
     index: true

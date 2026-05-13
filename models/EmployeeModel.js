@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 
 const EmployeeSchema = new mongoose.Schema({
   // Section 1 – Personal Details
+  companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
   EmployeeId: { type: String, default: "" },
   password: { type: String, default: "" },
   status: { type: String, default: "initial" },

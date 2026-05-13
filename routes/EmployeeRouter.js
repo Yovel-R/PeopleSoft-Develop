@@ -1,11 +1,13 @@
 const express = require("express");
 const Employee = require("../models/EmployeeModel");
-const EmployeeCounter = require("../models/EmployeeCounterModel");
 const LeaveCounter = require("../models/leaveCounter.model"); 
 const { sendEmail, LOGO_URL } = require("../utilities/sendEmail");
 const { getSignature } = require("../utilities/emailSignature");
 const multer = require("multer");
 const ExcelJS = require("exceljs");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const verifyTenant = require("../middleware/tenant.middleware");
 
 
 const router = express.Router();
@@ -14,23 +16,119 @@ const upload = multer({ storage: multer.memoryStorage() });
 /* ============================
    ADD / ONBOARD (INITIAL)
 ============================ */
-const RECEIVER_EMAIL = process.env.RECIVER_EMAIL_USER;
+const User = require("../models/User");
+const Role = require("../models/Role");
+
+const verifyPublicTenant = require("../middleware/publicTenant.middleware");
 
 router.post(
   "/add",
-  upload.any(), // parse multipart/form-data
+  upload.any(), // parse multipart/form-data FIRST
+  verifyPublicTenant,
   async (req, res) => {
     try {
       console.log("BODY:", req.body);   // employee fields
-      console.log("FILES:", req.files); // uploaded files
+      
+      // 1. Check if user already exists in this company
+      const existingUser = await User.findOne({ companyId: req.tenant.companyId, email: req.body.email });
+      if (existingUser) {
+        return res.status(400).json({ message: "An application with this email already exists for this company." });
+      }
 
-      // Optional: save employee info
-      const employee = new Employee({
-        ...req.body,
-        status: "initial", // you can skip if you don't want to store
+      // 2. Find or Create the Default EMPLOYEE Role for this company
+      let employeeRole = await Role.findOne({ companyId: req.tenant.companyId, name: 'EMPLOYEE' });
+      if (!employeeRole) {
+        employeeRole = new Role({
+          companyId: req.tenant.companyId,
+          name: 'EMPLOYEE',
+          description: 'Standard employee permissions',
+          permissions: ['VIEW_DASHBOARD', 'REQUEST_LEAVE'],
+          isSystemDefined: true
+        });
+        await employeeRole.save();
+      }
+
+      // 2. Create User in unified collection
+      const newUser = new User({
+        companyId: req.tenant.companyId,
+        email: req.body.email,
+        password: "", // Will be set on first login
+        roleId: employeeRole._id,
+        profile: {
+          firstName: req.body.fullName, // Legacy field name mapping
+          phone: req.body.phone,
+          dob: req.body.dob,
+          address: req.body.address,
+          gender: req.body.gender,
+          nationality: req.body.nationality,
+          maritalStatus: req.body.maritalStatus,
+          emergencyContact: {
+            name: req.body.emergencyName,
+            phone: req.body.emergencyPhone
+          }
+        },
+        employment: {
+          type: 'FULL_TIME',
+          designation: req.body.designation || req.body.role,
+          status: 'ONBOARDING'
+        },
+        education: {
+          qualification: req.body.qualification,
+          specialization: req.body.specialization,
+          college: req.body.college,
+          passingYear: req.body.passingYear,
+          ugCgpa: req.body.ugCgpa,
+          pgCgpa: req.body.pgCgpa
+        },
+        experience: {
+          isExperienced: req.body.isExperienced === 'true' || req.body.isExperienced === true,
+          years: req.body.experienceYears,
+          previousOrg: req.body.previousOrg,
+          designation: req.body.designation
+        },
+        system: {
+          onboardingStatus: 'initial',
+          declaration: req.body.declaration === 'true' || req.body.declaration === true,
+          bgConsent: req.body.bgConsent === 'true' || req.body.bgConsent === true,
+          whatsappConsent: req.body.whatsappConsent === 'true' || req.body.whatsappConsent === true
+        }
       });
 
-      await employee.save(); // optional
+      await newUser.save();
+
+      // 3. ALSO Create Employee in legacy collection (Backward Compatibility for Admin Dashboard)
+      const newEmployee = new Employee({
+        companyId: req.tenant.companyId,
+        fullName: req.body.fullName,
+        email: req.body.email,
+        phone: req.body.phone,
+        emergencyName: req.body.emergencyName,
+        emergencyPhone: req.body.emergencyPhone,
+        dob: req.body.dob,
+        address: req.body.address,
+        role: req.body.designation || req.body.role,
+        department: req.body.department,
+        linkedin: req.body.linkedin,
+        gender: req.body.gender,
+        nationality: req.body.nationality,
+        maritalStatus: req.body.maritalStatus,
+        qualification: req.body.qualification,
+        specialization: req.body.specialization,
+        college: req.body.college,
+        passingYear: req.body.passingYear,
+        ugCgpa: req.body.ugCgpa,
+        pgCgpa: req.body.pgCgpa,
+        isExperienced: req.body.isExperienced === 'true' || req.body.isExperienced === true,
+        experienceYears: req.body.experienceYears,
+        previousOrg: req.body.previousOrg,
+        designation: req.body.designation,
+        declaration: req.body.declaration === 'true' || req.body.declaration === true,
+        bgConsent: req.body.bgConsent === 'true' || req.body.bgConsent === true,
+        whatsappConsent: req.body.whatsappConsent === 'true' || req.body.whatsappConsent === true,
+        status: 'initial'
+      });
+
+      await newEmployee.save();
 
       // Map uploaded files to attachments
       const attachments = req.files?.map(file => ({
@@ -40,18 +138,19 @@ router.post(
 
       // Send email to receiver
       await sendEmail({
-        to: RECEIVER_EMAIL,
-        subject: "New Employee Submission",
+        to: req.tenant.receivingEmail,
+        subject: `New Employee Submission: ${newUser.profile.firstName}`,
         html: `
           <h3>New employee submission received</h3>
-          <p>Name: ${employee.fullName}</p>
-          <p>Email: ${employee.email}</p>
-          <p>Phone: ${employee.phone}</p>
+          <p>Name: ${newUser.profile.firstName}</p>
+          <p>Email: ${newUser.email}</p>
+          <p>Phone: ${newUser.profile.phone}</p>
         `,
         attachments,
+        replyTo: req.tenant.receivingEmail,
       });
 
-      res.status(200).json({ message: "Employee submitted & email sent" });
+      res.status(200).json({ message: "Employee submitted & email sent", userId: newUser._id });
     } catch (err) {
       console.error("Employee Add Error:", err);
       res.status(500).json({ message: "Server error", error: err.message });
@@ -63,21 +162,21 @@ module.exports = router;
 /* ============================
    GET INITIAL EMPLOYEES
 ============================ */
-router.get("/all/initial", async (req, res) => {
-  const employees = await Employee.find({ status: "initial" });
+router.get("/all/initial", verifyTenant, async (req, res) => {
+  const employees = await Employee.find({ status: "initial", companyId: req.tenant.companyId });
   res.json(employees);
 });
 
 /* ============================
    GET ACTIVE EMPLOYEES
 ============================ */
-router.get("/all/active", async (req, res) => {
+router.get("/all/active", verifyTenant, async (req, res) => {
   try {
     const { range = "all", status = "all" } = req.query;
 
     const statusFilter = status === "all" ? ["approved", "ongoing"] : [status];
 
-    const query = { status: { $in: statusFilter } };
+    const query = { status: { $in: statusFilter }, companyId: req.tenant.companyId };
 
     const now = new Date();
     let start, end;
@@ -99,18 +198,11 @@ router.get("/all/active", async (req, res) => {
       query.submittedAt = { $gte: start, $lte: end };
     }
 
-    console.log("Request URL:", req.originalUrl);
-    console.log("Query Params:", req.query);
-    console.log("DB Query:", JSON.stringify(query));
-
     const employees = await Employee.find(query)
-      .select('EmployeeId fullName email department designation status role phone onboardingDate isManager submittedAt')
-      .sort({ submittedAt: -1 });
+      .sort({ submittedAt: -1 })
+      .lean();
 
     console.log(`Found ${employees.length} employees`);
-    if (employees.length > 0) {
-      console.log("First Employee Sample:", JSON.stringify(employees[0]));
-    }
     res.json(employees);
   } catch (err) {
     console.error("Fetch Active Employees Error:", err);
@@ -121,7 +213,7 @@ router.get("/all/active", async (req, res) => {
 /* ============================
    GET SINGLE EMPLOYEE
 ============================ */
-router.get("/get/:id", async (req, res) => {
+router.get("/get/:id", verifyTenant, async (req, res) => {
   try {
     const { id } = req.params;
     console.log(`[DEBUG] Fetching employee with ID: ${id}`);
@@ -130,13 +222,14 @@ router.get("/get/:id", async (req, res) => {
     
     // 1. Try finding by MongoDB ObjectId first
     if (id.match(/^[0-9a-fA-F]{24}$/)) {
-      employee = await Employee.findById(id);
+      employee = await Employee.findOne({ _id: id, companyId: req.tenant.companyId });
     } 
     
     // 2. If not found or not an ObjectId, try finding by custom EmployeeId (case-insensitive)
     if (!employee) {
       employee = await Employee.findOne({ 
-        EmployeeId: { $regex: new RegExp(`^${id}$`, 'i') } 
+        EmployeeId: { $regex: new RegExp(`^${id}$`, 'i') },
+        companyId: req.tenant.companyId 
       });
     }
 
@@ -156,14 +249,14 @@ router.get("/get/:id", async (req, res) => {
 /* ============================
    ACCEPT EMPLOYEE (PDF + MAIL)
 ============================ */
-router.put("/accept/:id", async (req, res) => {
+router.put("/accept/:id", verifyTenant, async (req, res) => {
   try {
     const { onboardingDate } = req.body;
-    const employee = await Employee.findById(req.params.id);
+    const employee = await Employee.findOne({ _id: req.params.id, companyId: req.tenant.companyId });
     if (!employee) return res.status(404).json({ message: "Employee not found" });
 
     // Generate unique Employee ID
-    const newEmployeeId = await generateEmployeeId();
+    const newEmployeeId = await generateEmployeeId(req.tenant.companyId);
     employee.EmployeeId = newEmployeeId;
     employee.status = "approved";
     employee.onboardingDate = onboardingDate;
@@ -182,6 +275,7 @@ router.put("/accept/:id", async (req, res) => {
     ];
 
     const records = leaveConfigs.map(l => ({
+      companyId: req.tenant.companyId,
       employeeId: newEmployeeId,
       leaveType: l.type,
       totalAllowed: l.days,
@@ -216,9 +310,9 @@ router.put("/accept/:id", async (req, res) => {
 /* ============================
    REJECT EMPLOYEE / DELETE
 ============================ */
-router.delete("/delete/:id", async (req, res) => {
+router.delete("/delete/:id", verifyTenant, async (req, res) => {
   try {
-    const employee = await Employee.findByIdAndDelete(req.params.id);
+    const employee = await Employee.findOneAndDelete({ _id: req.params.id, companyId: req.tenant.companyId });
 
     if (!employee) {
       return res.status(404).json({ message: "Employee not found" });
@@ -231,9 +325,9 @@ router.delete("/delete/:id", async (req, res) => {
 });
 
 // Alias for delete to match some frontend calls
-router.delete("/reject/:id", async (req, res) => {
+router.delete("/reject/:id", verifyTenant, async (req, res) => {
   try {
-    const employee = await Employee.findByIdAndDelete(req.params.id);
+    const employee = await Employee.findOneAndDelete({ _id: req.params.id, companyId: req.tenant.companyId });
     if (!employee) return res.status(404).json({ message: "Employee not found" });
     res.json({ message: "Employee rejected/deleted", employee });
   } catch (error) {
@@ -259,11 +353,29 @@ router.post("/manager/login", async (req, res) => {
       return res.json({ message: "First-time password set", firstTime: true, manager });
     }
 
-    if (manager.password !== password) {
+    let isMatch = false;
+    if (manager.password.length === 60 || manager.password.startsWith('$2a$') || manager.password.startsWith('$2b$')) {
+        isMatch = await bcrypt.compare(password, manager.password);
+    } else {
+        isMatch = (manager.password === password);
+        if (isMatch) {
+            const salt = await bcrypt.genSalt(10);
+            manager.password = await bcrypt.hash(password, salt);
+            await manager.save();
+        }
+    }
+
+    if (!isMatch) {
       return res.status(401).json({ message: "Wrong password" });
     }
 
-    res.json({ message: "Login successful", firstTime: false, manager });
+    const token = jwt.sign(
+      { user: { id: manager.id, companyId: manager.companyId, role: 'manager' } },
+      process.env.JWT_SECRET || 'fallback_secret_key',
+      { expiresIn: '1d' }
+    );
+
+    res.json({ message: "Login successful", firstTime: false, manager, token });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -295,11 +407,29 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    if (employee.password !== password) {
+    let isMatch = false;
+    if (employee.password.length === 60 || employee.password.startsWith('$2a$') || employee.password.startsWith('$2b$')) {
+        isMatch = await bcrypt.compare(password, employee.password);
+    } else {
+        isMatch = (employee.password === password);
+        if (isMatch) {
+            const salt = await bcrypt.genSalt(10);
+            employee.password = await bcrypt.hash(password, salt);
+            await employee.save();
+        }
+    }
+
+    if (!isMatch) {
       return res.status(401).json({ message: "Wrong password" });
     }
 
-    res.json({ message: "Login successful", firstTime: false, employee });
+    const token = jwt.sign(
+      { user: { id: employee.id, companyId: employee.companyId, role: 'employee' } },
+      process.env.JWT_SECRET || 'fallback_secret_key',
+      { expiresIn: '1d' }
+    );
+
+    res.json({ message: "Login successful", firstTime: false, employee, token });
   } catch (error) {
     res.status(500).json({ message: "Server error", error: error.message });
   }
@@ -308,31 +438,35 @@ router.post("/login", async (req, res) => {
 /* ============================
    EMPLOYEE ID GENERATOR
 ============================ */
-async function generateEmployeeId() {
-  const fullYear = new Date().getFullYear();   // e.g., 2026
-  const prefix = `STP${fullYear % 100}`;      // STP26
+const Counter = require("../models/counter.model");
+const Company = require("../models/CompanyModel");
 
-  // Find counter for the current year, increment seq, create if not exists
-  const counter = await EmployeeCounter.findOneAndUpdate(
-    { year: fullYear },
-    { $inc: { seq: 1 }, $setOnInsert: { year: fullYear } },
-    { new: true, upsert: true }  // return the updated/new doc
+async function generateEmployeeId(companyId) {
+  // Fetch company code
+  const company = await Company.findById(companyId);
+  const companyCode = company ? company.companyCode : "UNKNOWN";
+
+  // Find counter for this company and 'employee' type
+  const counter = await Counter.findOneAndUpdate(
+    { companyId: companyId, type: 'employee' },
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true }
   );
 
-  // Pad seq to 2 or 3 digits (e.g., 01, 02, 07)
-  return `${prefix}${String(counter.seq).padStart(2, "0")}`;
+  // Pad seq to 3 digits (e.g., 001, 002)
+  return `${companyCode}-EMP-${String(counter.seq).padStart(3, "0")}`;
 }
 
 
 
-router.get("/export/excel/all-employees", async (req, res) => {
+router.get("/export/excel/all-employees", verifyTenant, async (req, res) => {
   try {
     const { status = "all", from, to } = req.query;
 
     const query =
       status === "all"
-        ? {}
-        : { status };
+        ? { companyId: req.tenant.companyId }
+        : { status, companyId: req.tenant.companyId };
 
     let employees = await Employee.find(query).sort({ submittedAt: -1 });
 
@@ -451,10 +585,10 @@ router.get("/export/excel/all-employees", async (req, res) => {
 
 
 // Toggle Manager Status
-router.put("/toggle-manager/:id", async (req, res) => {
+router.put("/toggle-manager/:id", verifyTenant, async (req, res) => {
   try {
     const { id } = req.params;
-    const employee = await Employee.findById(id);
+    const employee = await Employee.findOne({ _id: id, companyId: req.tenant.companyId });
     if (!employee) {
       return res.status(404).json({ message: "Employee not found" });
     }

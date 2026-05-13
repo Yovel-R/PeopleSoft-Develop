@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 
 const employeeResignationSchema = new mongoose.Schema(
   {
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
     employeeId: {
       type: String,
       required: true,

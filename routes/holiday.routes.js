@@ -1,9 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const Holiday = require("../models/Holiday");
+const verifyTenant = require("../middleware/tenant.middleware");
 
 // ➕ Add holiday (HR only)
-router.post("/", async (req, res) => {
+router.post("/", verifyTenant, verifyTenant, async (req, res) => {
   try {
     const { type, day, weeks, fromDate, toDate, reason } = req.body;
 
@@ -11,7 +12,7 @@ router.post("/", async (req, res) => {
       const newWeeks = Array.isArray(weeks) ? weeks : [];
 
       if (newWeeks.length === 0) {
-        const deleted = await Holiday.findOneAndDelete({ type: "weekly", day });
+        const deleted = await Holiday.findOneAndDelete({ type: "weekly", day, companyId: req.tenant.companyId });
         if (deleted) {
           return res.status(200).json({ 
             message: `All weekly holidays for ${day} deleted`,
@@ -22,8 +23,9 @@ router.post("/", async (req, res) => {
         }
       }
 
-      await Holiday.findOneAndDelete({ type: "weekly", day });
+      await Holiday.findOneAndDelete({ type: "weekly", day, companyId: req.tenant.companyId });
       const holiday = new Holiday({
+        companyId: req.tenant.companyId,
         type: "weekly",
         day,
         weeks: newWeeks
@@ -36,7 +38,8 @@ router.post("/", async (req, res) => {
       const from = new Date(fromDate);
       const to = new Date(toDate);
       
-      const holiday = new Holiday({ type, fromDate: from, toDate: to, reason });
+      const holiday = new Holiday({
+        companyId: req.tenant.companyId, type, fromDate: from, toDate: to, reason });
       await holiday.save();
       return res.status(201).json({ message: "Special holiday added", holiday });
     }
@@ -48,14 +51,15 @@ router.post("/", async (req, res) => {
 });
 
 // 📤 Bulk add holidays
-router.post("/bulk", async (req, res) => {
+router.post("/bulk", verifyTenant, async (req, res) => {
   try {
     const holidays = req.body;
     if (!Array.isArray(holidays)) {
       return res.status(400).json({ message: "Expected an array of holidays" });
     }
 
-    const results = await Holiday.insertMany(holidays, { ordered: false });
+    const holidaysWithTenant = holidays.map(h => ({ ...h, companyId: req.tenant.companyId }));
+    const results = await Holiday.insertMany(holidaysWithTenant, { ordered: false });
     res.status(201).json({ message: `${results.length} holidays added`, results });
   } catch (err) {
     // Some might have succeeded even if others failed (ordered: false)
@@ -72,7 +76,7 @@ router.post("/bulk", async (req, res) => {
 
 
 // 📅 Get all holidays
-router.get("/", async (req, res) => {
+router.get("/", verifyTenant, verifyTenant, async (req, res) => {
   try {
     const { year } = req.query;
     let query = {};
@@ -90,6 +94,7 @@ router.get("/", async (req, res) => {
       };
     }
 
+    query.companyId = req.tenant.companyId;
     const holidays = await Holiday.find(query).sort({
       type: 1,
       fromDate: 1,
@@ -103,9 +108,9 @@ router.get("/", async (req, res) => {
 });
 
 // ✏️ Update holiday
-router.put("/:id", async (req, res) => {
+router.put("/:id", verifyTenant, async (req, res) => {
   try {
-    const holiday = await Holiday.findById(req.params.id);
+    const holiday = await Holiday.findOne({ _id: req.params.id, companyId: req.tenant.companyId });
     if (!holiday) {
       return res.status(404).json({ message: "Holiday not found" });
     }
@@ -129,9 +134,9 @@ router.put("/:id", async (req, res) => {
 });
 
 // ❌ Delete holiday
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", verifyTenant, async (req, res) => {
   try {
-    const holiday = await Holiday.findByIdAndDelete(req.params.id);
+    const holiday = await Holiday.findOneAndDelete({ _id: req.params.id, companyId: req.tenant.companyId });
     if (!holiday) {
       return res.status(404).json({ message: "Holiday not found" });
     }
@@ -141,7 +146,7 @@ router.delete("/:id", async (req, res) => {
   }
 });
 // ✅ CHECK IF TODAY IS HOLIDAY
-router.get("/is-today-holiday", async (req, res) => {
+router.get("/is-today-holiday", verifyTenant, async (req, res) => {
   try {
     const now = new Date();
     const todayStr = now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
@@ -155,6 +160,7 @@ router.get("/is-today-holiday", async (req, res) => {
 
     // Check special holidays first
     const specialHoliday = await Holiday.findOne({
+      companyId: req.tenant.companyId,
       type: "special",
       fromDate: { $lte: todayEnd },
       toDate: { $gte: today }
@@ -175,6 +181,7 @@ router.get("/is-today-holiday", async (req, res) => {
 
     const weekNum = Math.ceil(today.getUTCDate() / 7); // 1st, 2nd, 3rd, 4th, 5th week
     const weeklyHoliday = await Holiday.findOne({
+      companyId: req.tenant.companyId,
       type: "weekly",
       day: dayName,
       weeks: weekNum

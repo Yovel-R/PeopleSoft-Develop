@@ -1,5 +1,6 @@
 const ExcelJS = require("exceljs");
 const express = require("express");
+const verifyTenant = require("../middleware/tenant.middleware");
 const Attendance = require("../models/attendancemodel");
 const PDFDocument = require("pdfkit");
 const moment = require("moment");
@@ -9,9 +10,10 @@ const router = express.Router();
 
 // 📌 Punch In
 
-router.post("/punch-in", async (req, res) => {
+router.post("/punch-in", verifyTenant, async (req, res) => {
   try {
-    const { internId, location } = req.body;
+    const internId = req.body.internId || req.body.id || req.user.id;
+    const { location } = req.body;
 
     const todayStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
     const today = new Date(todayStr);
@@ -59,6 +61,7 @@ router.post("/punch-in", async (req, res) => {
 
     if (!record) {
       record = new Attendance({
+        companyId: req.tenant.companyId,
         internId,
         date: todayStr,
       });
@@ -79,9 +82,10 @@ router.post("/punch-in", async (req, res) => {
 
 
 // 📌 Punch Out
-router.post("/punch-out", async (req, res) => {
+router.post("/punch-out", verifyTenant, async (req, res) => {
   try {
-    const { internId, location } = req.body;
+    const internId = req.body.internId || req.body.id || req.user.id;
+    const { location } = req.body;
 
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
@@ -119,7 +123,7 @@ router.post("/punch-out", async (req, res) => {
 
 
 // 📌 Get Attendance by Intern ID
-router.get("/intern/:id", async (req, res) => {
+router.get("/intern/:id", verifyTenant, async (req, res) => {
   try {
     const internId = req.params.id;
     const { year, month, from, to } = req.query;  // Add these params
@@ -142,7 +146,7 @@ router.get("/intern/:id", async (req, res) => {
   }
 });
 
-router.get("/today/all", async (req, res) => {
+router.get("/today/all", verifyTenant, async (req, res) => {
   try {
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
 
@@ -208,8 +212,11 @@ router.get("/today/all", async (req, res) => {
 
 
 // 📌 Get Today's Attendance (FIXED)
-router.get("/today/:internId", async (req, res) => {
-  const { internId } = req.params;
+router.get("/today/:internId", verifyTenant, async (req, res) => {
+  let { internId } = req.params;
+  if (internId === 'me' || !internId) {
+    internId = req.user.id;
+  }
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
   const record = await Attendance.findOne({ internId, date: today });
   console.log("Today attendance record:", record);
@@ -217,7 +224,7 @@ router.get("/today/:internId", async (req, res) => {
 });
 
 // 📌 Export Attendance Excel
-router.get("/export/pdf/:internId", async (req, res) => {
+router.get("/export/pdf/:internId", verifyTenant, async (req, res) => {
   try {
     const { internId } = req.params;
     const { from, to } = req.query;
@@ -334,7 +341,7 @@ router.get("/export/pdf/:internId", async (req, res) => {
   }
 });
 
-router.get("/export/excel/all-interns", async (req, res) => {
+router.get("/export/excel/all-interns", verifyTenant, async (req, res) => {
   try {
     const { from, to } = req.query;
 
@@ -495,7 +502,7 @@ router.get("/export/excel/all-interns", async (req, res) => {
 
 
 // 📌 Manual Update Attendance (HR only)
-router.post("/update-manual", async (req, res) => {
+router.post("/update-manual", verifyTenant, async (req, res) => {
   try {
     const { internId, date, punchInTime, punchOutTime } = req.body;
 
@@ -538,7 +545,7 @@ router.post("/update-manual", async (req, res) => {
 /* ======================
    📌 Get Attendance Trend (Last 7 Days)
 ====================== */
-router.get("/trend", async (req, res) => {
+router.get("/trend", verifyTenant, async (req, res) => {
   try {
     const trend = [];
     for (let i = 6; i >= 0; i--) {

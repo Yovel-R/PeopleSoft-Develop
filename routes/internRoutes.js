@@ -1,4 +1,5 @@
 const express = require("express");
+const verifyTenant = require("../middleware/tenant.middleware");
 const mongoose = require("mongoose");
 const Intern = require("../models/Intern");
 const Resignation = require("../models/resignation.model.js");  
@@ -12,17 +13,24 @@ const { getSignature } = require("../utilities/emailSignature");
 const { generateOfferLetter } = require("../utilities/offerLetterGenerator");
 const fs = require('fs');
 const path = require('path');
+const { getAssetBuffer } = require("../utilities/assetHelper");
+const Company = require("../models/CompanyModel");
 
 
-router.post("/add", async (req, res) => {
+const User = require("../models/User");
+const Role = require("../models/Role");
+
+const verifyPublicTenant = require("../middleware/publicTenant.middleware");
+
+router.post("/add", verifyPublicTenant, async (req, res) => {
   try {
     const {
       fullName,
+      email,
       college,
       year,
       department,
       role,
-      email,
       contact,
       emergencyContact,
       onboardingDate,
@@ -33,24 +41,78 @@ router.post("/add", async (req, res) => {
       resume // Base64 PDF
     } = req.body;
 
-    const intern = new Intern({
+    // 1. Check if user already exists in this company
+    const existingUser = await User.findOne({ companyId: req.tenant.companyId, email });
+    if (existingUser) {
+      return res.status(400).json({ message: "An application with this email already exists for this company." });
+    }
+
+    // 2. Find or Create the Default INTERN Role for this company
+    let internRole = await Role.findOne({ companyId: req.tenant.companyId, name: 'INTERN' });
+    if (!internRole) {
+      internRole = new Role({
+        companyId: req.tenant.companyId,
+        name: 'INTERN',
+        description: 'Standard intern permissions',
+        permissions: ['VIEW_DASHBOARD', 'REQUEST_LEAVE'],
+        isSystemDefined: true
+      });
+      await internRole.save();
+    }
+
+    const newUser = new User({
+      companyId: req.tenant.companyId,
+      email: email,
+      password: "", // Set on first login
+      roleId: internRole._id,
+      profile: {
+        firstName: fullName,
+        phone: contact,
+        emergencyContact: {
+          phone: emergencyContact
+        },
+        linkedin: linkedin
+      },
+      education: {
+        college: college,
+        passingYear: year, // Mapping "year" to passingYear or current year
+        specialization: department
+      },
+      employment: {
+        type: 'INTERN',
+        designation: role,
+        status: 'ONBOARDING',
+        joinedAt: onboardingDate,
+        endDate: endDate,
+        linkedin: linkedin
+      },
+      system: {
+        onboardingStatus: 'initial'
+      }
+    });
+
+    await newUser.save();
+
+    // 3. ALSO Create Intern in legacy collection (Backward Compatibility for Admin Dashboard)
+    const newIntern = new Intern({
+      companyId: req.tenant.companyId,
       fullName,
+      email,
       college,
       year,
       department,
       role,
-      email,
       contact,
       emergencyContact,
       onboardingDate,
       endDate,
       linkedin,
       internshipType,
-      applicationType: applicationType || "Internship",
-      status: "initial",
+      applicationType,
+      status: 'initial'
     });
 
-    await intern.save();
+    await newIntern.save();
 
     // Send Notification Email to HR with the Resume
     try {
@@ -65,7 +127,7 @@ router.post("/add", async (req, res) => {
       }
 
       await sendEmail({
-        to: process.env.RECIVER_EMAIL_USER,
+        to: req.tenant.receivingEmail,
         subject: `New ${applicationType || 'Internship'} Application: ${fullName}`,
         html: `
           <h3>New Application Received</h3>
@@ -83,6 +145,7 @@ router.post("/add", async (req, res) => {
           ${getSignature(getLogoUrl())}
         `,
         attachments: attachments,
+        replyTo: req.tenant.receivingEmail,
       });
     } catch (emailErr) {
       console.error("Failed to send application notification email:", emailErr);
@@ -91,7 +154,7 @@ router.post("/add", async (req, res) => {
 
     res.status(200).json({
       message: "Intern stored successfully",
-      intern,
+      user: newUser,
     });
 
   } catch (err) {
@@ -101,7 +164,7 @@ router.post("/add", async (req, res) => {
 });
 
 // GET intern by internid
-router.get("/all/initial", async (req, res) => {
+router.get("/all/initial", verifyTenant, async (req, res) => {
   try {
     const interns = await Intern.find({ status: "initial" });
     res.json(interns);
@@ -115,7 +178,7 @@ router.get("/all/initial", async (req, res) => {
 
 // Get all approved or ongoing interns
 // Get all approved or ongoing interns with filters
-router.get("/all/active", async (req, res) => {
+router.get("/all/active", verifyTenant, async (req, res) => {
   try {
     const { range = "thisMonth", status = "all" } = req.query;
 
@@ -152,8 +215,7 @@ router.get("/all/active", async (req, res) => {
 
 
 
-router.put(
-  "/accept/:id",
+router.put("/accept/:id", verifyTenant,
   async (req, res) => {
     try {
       const { onboardingDate, endDate, internshipType, role } = req.body;
@@ -168,30 +230,41 @@ router.put(
       }
 
       // 1. Generate Intern ID
-      const newId = await generateInternId();
+      const newId = await generateInternId(req.tenant.companyId);
 
-      // 2. Generate Offer Letter PDF Buffer on the fly
+      // 2. Fetch company for settings
+      const company = await Company.findById(req.tenant.companyId);
+      const olSettings = company?.offerLetterSettings || {};
+
+      // 3. Generate Offer Letter PDF Buffer on the fly
       const pdfBuffer = await generateOfferLetter({
         fullName: intern.fullName,
         role: role || intern.role,
         onboardingDate: onboardingDate,
         endDate: endDate
-      });
+      }, olSettings);
 
-      // 3. Prepare Static Attachments (Annexure & NDA)
-      const assetsDir = path.join(__dirname, '../assets/pdf');
-      const annexurePath = path.join(assetsDir, 'Softrate_Internship_Annexure.pdf');
-      const ndaPath = path.join(assetsDir, 'Internship NDA.pdf');
-
+      // 4. Prepare Attachments
       const attachments = [
         { filename: `${newId}-Offer-Letter.pdf`, content: pdfBuffer }
       ];
 
-      if (fs.existsSync(annexurePath)) {
-        attachments.push({ filename: `${newId}-Annexure.pdf`, content: fs.readFileSync(annexurePath) });
+      // Annexure
+      if (olSettings.annexureUrl) {
+          const annBuf = await getAssetBuffer(olSettings.annexureUrl);
+          if (annBuf) attachments.push({ filename: `${newId}-Annexure.pdf`, content: annBuf });
+      } else {
+          const annexurePath = path.join(__dirname, '../assets/pdf/Softrate_Internship_Annexure.pdf');
+          if (fs.existsSync(annexurePath)) attachments.push({ filename: `${newId}-Annexure.pdf`, content: fs.readFileSync(annexurePath) });
       }
-      if (fs.existsSync(ndaPath)) {
-        attachments.push({ filename: `${newId}-NDA.pdf`, content: fs.readFileSync(ndaPath) });
+
+      // NDA
+      if (olSettings.ndaUrl) {
+          const ndaBuf = await getAssetBuffer(olSettings.ndaUrl);
+          if (ndaBuf) attachments.push({ filename: `${newId}-NDA.pdf`, content: ndaBuf });
+      } else {
+          const ndaPath = path.join(__dirname, '../assets/pdf/Internship NDA.pdf');
+          if (fs.existsSync(ndaPath)) attachments.push({ filename: `${newId}-NDA.pdf`, content: fs.readFileSync(ndaPath) });
       }
 
       // 4. Update Intern Record
@@ -225,6 +298,7 @@ router.put(
           ${getSignature(getLogoUrl())}
         `,
         attachments: attachments,
+        replyTo: req.tenant.receivingEmail,
       });
 
       res.json({ message: "Intern approved & email sent with Offer Letter", intern });
@@ -237,7 +311,7 @@ router.put(
 );
 
 
-router.delete("/reject/:id", async (req, res) => {
+router.delete("/reject/:id", verifyTenant, async (req, res) => {
   try {
     const intern = await Intern.findByIdAndDelete(req.params.id);
 
@@ -259,28 +333,31 @@ router.delete("/reject/:id", async (req, res) => {
 
 // id generator
 
-async function generateInternId() {
-  const year = (new Date().getFullYear() % 100).toString();
+
+async function generateInternId(companyId) {
+  // Fetch company code
+  const company = await Company.findById(companyId);
+  const companyCode = company ? company.companyCode : "UNKNOWN";
 
   let counter;
   let internId;
 
   do {
     counter = await Counter.findOneAndUpdate(
-      { year },
+      { companyId: companyId, type: 'intern' },
       { $inc: { seq: 1 } },
       { new: true, upsert: true }
     );
 
-    internId = `${year}${String(counter.seq).padStart(3, "0")}`;
-  } while (await Intern.exists({ internid: internId }));
+    internId = `${companyCode}-${String(counter.seq).padStart(3, "0")}`;
+  } while (await Intern.exists({ internid: internId, companyId: companyId }));
 
   return internId;
 }
 
 
 
-router.post("/login", async (req, res) => {
+router.post("/login", verifyTenant, async (req, res) => {
   const { internid, password } = req.body;
 
   const intern = await Intern.findOne({ internid });
@@ -311,7 +388,7 @@ router.post("/login", async (req, res) => {
 
 
 // Get intern by internid or MongoDB _id
-router.get("/get/:id", async (req, res) => {
+router.get("/get/:id", verifyTenant, async (req, res) => {
   try {
     const id = req.params.id;
     let intern;
@@ -336,7 +413,7 @@ router.get("/get/:id", async (req, res) => {
 });
 
 // changing approved to ongoing
-router.post("/update-status", async (req, res) => {
+router.post("/update-status", verifyTenant, async (req, res) => {
   try {
     const { internId, status } = req.body;
 
@@ -361,7 +438,7 @@ router.post("/update-status", async (req, res) => {
 });
 
 
-router.get("/pastout", async (req, res) => {
+router.get("/pastout", verifyTenant, async (req, res) => {
   try {
     const year = parseInt(req.query.year);
     const month = parseInt(req.query.month); // 0 = all
@@ -408,7 +485,7 @@ router.get("/pastout", async (req, res) => {
 });
 
 
-router.get("/export/excel", async (req, res) => {
+router.get("/export/excel", verifyTenant, async (req, res) => {
   try {
     const { status = "all", from, to } = req.query;
 
@@ -495,7 +572,7 @@ router.get("/export/excel", async (req, res) => {
 /* ============================
    ASSIGN INTERN TO MANAGER
 ============================ */
-router.put("/assign-manager/:id", async (req, res) => {
+router.put("/assign-manager/:id", verifyTenant, async (req, res) => {
   try {
     const { managerId } = req.body;
     const intern = await Intern.findById(req.params.id);
@@ -514,7 +591,7 @@ router.put("/assign-manager/:id", async (req, res) => {
 /* ============================
    GET INTERNS ASSIGNED TO MANAGER
 ============================ */
-router.get("/assigned-to/:managerId", async (req, res) => {
+router.get("/assigned-to/:managerId", verifyTenant, async (req, res) => {
   try {
     const interns = await Intern.find({ 
       assignedManager: req.params.managerId,
@@ -529,7 +606,7 @@ router.get("/assigned-to/:managerId", async (req, res) => {
 /* ============================
    MANAGER REVIEW (APPROVE/REJECT)
 ============================ */
-router.put("/manager-review/:id", async (req, res) => {
+router.put("/manager-review/:id", verifyTenant, async (req, res) => {
   try {
     const { status, remarks } = req.body; // status: 'approved' | 'rejected'
     const intern = await Intern.findById(req.params.id);

@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 
 const projectSchema = new mongoose.Schema({
-  title: { type: String, required: true },
+  
+  companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },title: { type: String, required: true },
   client: { type: String },
   description: { type: String },
   startDate: { type: Date, default: Date.now },

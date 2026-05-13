@@ -1,15 +1,16 @@
 const express = require("express");
 const router = express.Router();
+const verifyTenant = require("../middleware/tenant.middleware");
 const Policy = require("../models/Policy");
 
 /* GET ALL */
-router.get("/all", async (req, res) => {
+router.get("/all", verifyTenant, async (req, res) => {
   const policies = await Policy.find().sort({ createdAt: -1 });
   res.json(policies);
 });
 
 /* CREATE SINGLE */
-router.post("/add", async (req, res) => {
+router.post("/add", verifyTenant, async (req, res) => {
   try {
     const policy = new Policy(req.body);
     await policy.save();
@@ -20,14 +21,14 @@ router.post("/add", async (req, res) => {
 });
 
 /* BULK CREATE */
-router.post("/bulk-add", async (req, res) => {
+router.post("/bulk-add", verifyTenant, async (req, res) => {
   const { policies } = req.body;
   await Policy.insertMany(policies);
   res.status(201).json({ message: "Policies added" });
 });
 
 /* BULK UPDATE */
-router.put("/bulk-update", async (req, res) => {
+router.put("/bulk-update", verifyTenant, async (req, res) => {
   const { policies } = req.body;
 
   for (const p of policies) {
@@ -42,7 +43,7 @@ router.put("/bulk-update", async (req, res) => {
 });
 
 /* DELETE */
-router.delete("/:id", async (req, res) => {
+router.delete("/:id", verifyTenant, async (req, res) => {
   await Policy.findByIdAndDelete(req.params.id);
   res.json({ message: "Policy deleted" });
 });

@@ -3,7 +3,8 @@ const mongoose = require("mongoose");
 /* ---------------------- GOAL SCHEMA ---------------------- */
 
 const GoalSchema = new mongoose.Schema({
-  perspective: { type: String, required: true, trim: true },
+  
+  companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },perspective: { type: String, required: true, trim: true },
   kpi: {type: String,required: true,trim: true},
   title: {type: String,required: true,trim: true},
   description: {type: String,required: true,trim: true},

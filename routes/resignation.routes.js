@@ -1,6 +1,7 @@
 // module.exports = router;
 const express = require("express");
 const router = express.Router();
+const verifyTenant = require("../middleware/tenant.middleware");
 const multer = require("multer");
 const upload = multer({ storage: multer.memoryStorage() }); 
 
@@ -9,19 +10,23 @@ const upload = multer({ storage: multer.memoryStorage() });
 const resignationController = require("../controllers/resignation.controller");
 
 // Create a resignation request
-router.post("/submit", resignationController.createResignation);
+router.post("/submit", verifyTenant, resignationController.createResignation);
 
-router.get("/check/:internId", resignationController.checkResignation);
+router.get("/check/:userId", verifyTenant, resignationController.checkResignation);
 // Get all resignation requests
-router.get("/all", resignationController.getAllResignations);
+router.get("/all", verifyTenant, resignationController.getAllResignations);
 
-router.get("/pending", resignationController.getPendingResignations);
+router.get("/pending", verifyTenant, resignationController.getPendingResignations);
+router.get("/manager-pending/:managerId", verifyTenant, resignationController.getManagerPendingResignations);
 
-// Get resignation by internId
-router.get("/:internId", resignationController.getResignationByInternId);
+// Get resignation by userId
+router.get("/:userId", verifyTenant, resignationController.getResignationByUserId);
 
-// Accept or reject resignation
-router.put("/:action/:id", upload.array("files"), resignationController.updateResignationStatus);
+// Manager Review
+router.put("/manager-review/:id", verifyTenant, resignationController.managerReview);
 
-// router.get("/pending", resignationController.getPendingResignations);
+// HR Review (Accept or reject resignation)
+router.put("/hr-review/:action/:id", verifyTenant, upload.array("files"), resignationController.hrReview);
+
+// router.get("/pending", verifyTenant, resignationController.getPendingResignations);
 module.exports = router;

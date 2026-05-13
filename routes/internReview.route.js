@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const verifyTenant = require("../middleware/tenant.middleware");
 const Review = require("../models/internReview.model");
 
 /* ---------------- UTIL ---------------- */
@@ -17,7 +18,7 @@ function scoreForGrade(grade, weight) {
 /* ---------------- SUBMIT SELF REVIEW ---------------- */
 // POST /api/reviews/submit-review
 
-router.post("/submit-review", async (req, res) => {
+router.post("/submit-review", verifyTenant, async (req, res) => {
   try {
     const { internId, internName, team, goals } = req.body;
 
@@ -90,7 +91,7 @@ router.post("/submit-review", async (req, res) => {
 /* ---------------- GET CURRENT MONTH SELF REVIEW ---------------- */
 // GET /api/reviews/self/:internId
 
-router.get("/self/:internId", async (req, res) => {
+router.get("/self/:internId", verifyTenant, async (req, res) => {
   try {
     const { internId } = req.params;
 
@@ -140,7 +141,7 @@ router.get("/self/:internId", async (req, res) => {
 /* ---------------- GET REVIEW (HR VIEW) ---------------- */
 // GET /api/reviews/:internId?month=2025-12
 
-router.get("/:internId", async (req, res) => {
+router.get("/:internId", verifyTenant, async (req, res) => {
   try {
     const { internId } = req.params;
     const { month } = req.query;
@@ -175,7 +176,7 @@ router.get("/:internId", async (req, res) => {
 /* ---------------- GRADE REVIEW (HR) ---------------- */
 // PUT /api/reviews/:internId/grade?month=2025-12
 
-router.put("/:internId/grade", async (req, res) => {
+router.put("/:internId/grade", verifyTenant, async (req, res) => {
   try {
     const { internId } = req.params;
     const { month } = req.query;

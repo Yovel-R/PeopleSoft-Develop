@@ -14,6 +14,9 @@ app.use(express.static('public'));
 // ============================
 // MongoDB Atlas Connection
 // ============================
+const tenantPlugin = require('./plugins/tenant.plugin');
+mongoose.plugin(tenantPlugin);
+
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('✅ MongoDB Atlas connected'))
   .catch(err => console.error('❌ MongoDB error:', err));
@@ -41,8 +44,9 @@ app.use('/api/policy', require('./routes/policyRoutes'));
 app.use("/api/holidays", require("./routes/holiday.routes"));
 app.use("/api/assignments", require("./routes/assignment.routes"));
 app.use("/api/attendance-requests", require("./routes/attendanceRequest.routes"));
-app.use("/api/projects", require("./routes/project.routes"));
-
+app.use('/api/projects', require('./routes/project.routes'));
+app.use('/api/onboarding', require('./routes/onboarding.routes'));
+app.use('/api/settings', require('./routes/settings.routes'));
 
 // ============================
 // Test Route

@@ -1,9 +1,10 @@
 const express = require("express");
 const router = express.Router();
+const verifyTenant = require("../middleware/tenant.middleware");
 const Leave = require("../models/leave.model");
 const Intern = require("../models/Intern");
 
-router.post("/apply", async (req, res) => {
+router.post("/apply", verifyTenant, async (req, res) => {
   try {
     const data = req.body;
 
@@ -97,7 +98,7 @@ router.post("/apply", async (req, res) => {
 });
 
 
-router.get("/pending", async (req, res) => {
+router.get("/pending", verifyTenant, async (req, res) => {
   try {
     // Find all leaves where status is 'pending'
     const pendingLeaves = await Leave.find({ status: "pending" });
@@ -108,7 +109,7 @@ router.get("/pending", async (req, res) => {
   }
 });
 
-router.put("/:id", async (req, res) => {
+router.put("/:id", verifyTenant, async (req, res) => {
   try {
     const { status, rejectionReason } = req.body;
     const leave = await Leave.findById(req.params.id);
@@ -126,7 +127,7 @@ router.put("/:id", async (req, res) => {
   }
 });
 // GET /api/leave/count/:internId?month=3&year=2026
-router.get("/count/:internId", async (req, res) => {
+router.get("/count/:internId", verifyTenant, async (req, res) => {
   try {
     const { internId } = req.params;
     const month = parseInt(req.query.month); // 1-12
@@ -161,7 +162,7 @@ router.get("/count/:internId", async (req, res) => {
 });
 
 // GET /api/leave/:internId
-router.get("/:internId", async (req, res) => {
+router.get("/:internId", verifyTenant, async (req, res) => {
   try {
     const internId = req.params.internId;
     const leaves = await Leave.find({ internId }); // filter by internId
@@ -174,7 +175,7 @@ router.get("/:internId", async (req, res) => {
 
 // GET /api/intern/pastout?year=2025&month=0
 // Returns interns with status "drop" filtered by year and (optionally) month of endDate.
-router.get("/pastout", async (req, res) => {
+router.get("/pastout", verifyTenant, async (req, res) => {
   try {
     const year = parseInt(req.query.year, 10);
     const month = parseInt(req.query.month ?? "0", 10); // 0 = all months

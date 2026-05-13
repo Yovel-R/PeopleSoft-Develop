@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 
 const holidaySchema = new mongoose.Schema({
-  type: {
+  
+  companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },type: {
     type: String,
     enum: ['weekly', 'special'],
     required: true

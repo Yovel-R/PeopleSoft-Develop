@@ -1,11 +1,12 @@
 const express = require('express');
+const verifyTenant = require("../middleware/tenant.middleware");
 const mongoose = require('mongoose');
 const router = express.Router();
 const Employee = require('../models/EmployeeModel');
 const Intern = require('../models/Intern');
 
 // Fetch all managers
-router.get('/managers', async (req, res) => {
+router.get("/managers", verifyTenant, async (req, res) => {
   try {
     const managers = await Employee.find({ isManager: true }).select('fullName _id department role EmployeeId');
     res.json(managers);
@@ -15,7 +16,7 @@ router.get('/managers', async (req, res) => {
 });
 
 // Fetch all unassigned users (Interns & Employees combined)
-router.get('/unassigned', async (req, res) => {
+router.get("/unassigned", verifyTenant, async (req, res) => {
   try {
     const unassignedInterns = await Intern.find({
       status: { $in: ['approved', 'ongoing'] }
@@ -38,7 +39,7 @@ router.get('/unassigned', async (req, res) => {
 });
 
 // Assign users to a manager
-router.post('/assign', async (req, res) => {
+router.post("/assign", verifyTenant, async (req, res) => {
   const { managerId, userIds, userType } = req.body;
   if (!managerId || !userIds || !Array.isArray(userIds) || !userType) {
     return res.status(400).json({ error: 'managerId, userIds array, and userType are required.' });
@@ -65,7 +66,7 @@ router.post('/assign', async (req, res) => {
 });
 
 // Fetch team members for a manager (Only approved and ongoing)
-router.get('/team/:managerId', async (req, res) => {
+router.get("/team/:managerId", verifyTenant, async (req, res) => {
   try {
     const { managerId } = req.params;
     
@@ -89,7 +90,7 @@ router.get('/team/:managerId', async (req, res) => {
 });
 
 // Fetch today's attendance for a manager's team (Interns & Employees)
-router.get('/team-attendance/:managerId', async (req, res) => {
+router.get("/team-attendance/:managerId", verifyTenant, async (req, res) => {
   try {
     const { managerId } = req.params;
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });

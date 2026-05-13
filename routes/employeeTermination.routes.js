@@ -1,11 +1,12 @@
 const express = require('express');
 const router = express.Router();
+const verifyTenant = require("../middleware/tenant.middleware");
 const EmployeeTermination = require('../models/EmployeeTermination');
 const Employee = require('../models/EmployeeModel');
 const mongoose = require('mongoose');
 
 // 🟢 CREATE - HR Direct Termination + Update Employee STATUS only
-router.post('/', async (req, res) => {
+router.post("/", verifyTenant, async (req, res) => {
   const session = await mongoose.startSession();
   session.startTransaction();
   
@@ -69,7 +70,7 @@ router.post('/', async (req, res) => {
 });
 
 // 🔍 GET ALL Terminations
-router.get('/all', async (req, res) => {
+router.get("/all", verifyTenant, async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query;
     
@@ -97,7 +98,7 @@ router.get('/all', async (req, res) => {
 });
 
 // 👤 GET Terminated Employees (Direct from Employee collection)
-router.get('/terminated-employees', async (req, res) => {
+router.get("/terminated-employees", verifyTenant, async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query;
     
@@ -125,7 +126,7 @@ router.get('/terminated-employees', async (req, res) => {
 });
 
 // 📊 Stats
-router.get('/stats', async (req, res) => {
+router.get("/stats", verifyTenant, async (req, res) => {
   try {
     const totalTerminated = await Employee.countDocuments({ status: 'terminated' });
     

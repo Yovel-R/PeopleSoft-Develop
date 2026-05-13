@@ -1,6 +1,8 @@
 const mongoose = require("mongoose");
 
 const InternSchema = new mongoose.Schema({
+  
+  companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
   internid: {
     type: String,
     unique: true,

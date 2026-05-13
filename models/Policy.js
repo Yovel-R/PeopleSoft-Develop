@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 
 const policySchema = new mongoose.Schema(
   {
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
     policy_name: { type: String, required: true },
     policy_view_by: {
       type: [String],
