@@ -1,14 +1,16 @@
 const express = require('express');
 const cors = require('cors');
+const compression = require('compression');
 const mongoose = require('mongoose');
 require('dotenv').config();
 require("./cron/leaveReset.cron");
 
 
 const app = express();
+app.use(compression());
 app.use(cors({ origin: '*' }));
-app.use(express.json({ limit: '5mb' }));
-app.use(express.urlencoded({ limit: '5mb', extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static('public'));
 
 // ============================
@@ -47,6 +49,7 @@ app.use("/api/attendance-requests", require("./routes/attendanceRequest.routes")
 app.use('/api/projects', require('./routes/project.routes'));
 app.use('/api/onboarding', require('./routes/onboarding.routes'));
 app.use('/api/settings', require('./routes/settings.routes'));
+app.use('/api/performance-templates', require('./routes/performance.routes'));
 
 // ============================
 // Test Route
@@ -64,4 +67,3 @@ const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
-

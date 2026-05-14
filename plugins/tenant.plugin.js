@@ -39,8 +39,6 @@ const tenantPlugin = function (schema, options) {
   // Documents
   schema.pre('save', scopeDocument);
   
-  // Note: For insertMany, Mongoose doesn't have a direct hook for modifying the array of documents before validation easily in older versions, 
-  // but pre('insertMany') exists in Mongoose 5.4+
   schema.pre('insertMany', async function (docs) {
     const companyId = getTenantId();
     if (companyId) {

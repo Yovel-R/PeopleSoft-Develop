@@ -18,7 +18,7 @@ router.get('/company', verifyTenant, async (req, res) => {
     res.json({
       success: true,
       settings: company.settings,
-      offerLetterSettings: company.offerLetterSettings,
+      offerLetterSettings: company.settings?.offerLetterSettings || {},
       company: {
         name: company.name,
         companyCode: company.companyCode
@@ -54,18 +54,22 @@ router.put('/company', verifyTenant, async (req, res) => {
     if (communication !== undefined) company.settings.communication = communication;
     
     if (offerLetterSettings !== undefined) {
-      company.offerLetterSettings = {
-        ...company.offerLetterSettings,
+      company.settings.offerLetterSettings = {
+        ...company.settings.offerLetterSettings,
         ...offerLetterSettings
       };
+      // Explicitly mark as modified for nested objects
+      company.markModified('settings.offerLetterSettings');
     }
 
+    company.markModified('settings');
     await company.save();
 
     res.json({
       success: true,
       message: 'Settings updated successfully',
-      settings: company.settings
+      settings: company.settings,
+      offerLetterSettings: company.settings.offerLetterSettings
     });
   } catch (error) {
     console.error('Update Settings Error:', error);

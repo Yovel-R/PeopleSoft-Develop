@@ -41,60 +41,7 @@ exports.hrSignup = async (req, res) => {
   }
 };
 
-// HR Login
-exports.hrLogin = async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    const user = await hrModel.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ msg: "User not found" });
-    }
-
-    let isMatch = false;
-    // Check if password is plain text (legacy) or hashed
-    if (user.password.length === 60 || user.password.startsWith('$2a$') || user.password.startsWith('$2b$')) {
-        isMatch = await bcrypt.compare(password, user.password);
-    } else {
-        isMatch = (user.password === password);
-        // Optional: Hash the plain text password and save it
-        if (isMatch) {
-            const salt = await bcrypt.genSalt(10);
-            user.password = await bcrypt.hash(password, salt);
-            await user.save();
-        }
-    }
-
-    if (!isMatch) {
-      return res.status(400).json({ msg: "Invalid password" });
-    }
-
-    const payload = {
-      user: {
-        id: user.id,
-        companyId: user.companyId,
-        role: 'hr'
-      }
-    };
-
-    jwt.sign(
-      payload,
-      process.env.JWT_SECRET || 'fallback_secret_key',
-      { expiresIn: '1d' },
-      (err, token) => {
-        if (err) throw err;
-        res.status(200).json({
-          msg: "Login successful",
-          token,
-          user: { _id: user._id, name: user.name, email: user.email, companyId: user.companyId }
-        });
-      }
-    );
-
-  } catch (err) {
-    res.status(500).json({ msg: "Server error", error: err.message });
-  }
-};
+// HR Login has been replaced by unified-login in auth.routes.js
 
 // Save HR Policy URL
 exports.savePolicyUrl = async (req, res) => {

@@ -160,6 +160,46 @@ exports.hrReview = async (req, res) => {
       req.files.forEach(f => attachments.push({ content: f.buffer, filename: f.originalname }));
     }
 
+    // Dynamic Certificate Generation from Flutter flags
+    const { internship, project, lor, title } = req.body;
+    if (resignation.userType === 'intern' && (internship || project || lor)) {
+      const { generateDynamicPDF } = require("../utilities/certificateGenerator");
+      const Company = require("../models/CompanyModel");
+      
+      const company = await Company.findById(resignation.companyId);
+      const olSettings = company?.settings?.offerLetterSettings || company?.offerLetterSettings || {};
+      
+      const docData = {
+        fullName: user.fullName,
+        title: title || 'Mr.',
+        internId: user.internid,
+        onboardingDate: user.onboardingDate ? new Date(user.onboardingDate).toLocaleDateString('en-IN') : '',
+        endDate: resignation.lastWorkingDay ? new Date(resignation.lastWorkingDay).toLocaleDateString('en-IN') : '',
+        role: user.role,
+        companyName: olSettings.companyName || 'Softrate Global',
+        workLocation: olSettings.workLocation || 'Chennai',
+      };
+
+      if (internship && (olSettings.documentTemplates?.internshipCompletion?.pages?.length > 0 || olSettings.documentTemplates?.internshipCompletion?.backgroundUrl)) {
+        try {
+          const buffer = await generateDynamicPDF(docData, olSettings.documentTemplates.internshipCompletion);
+          attachments.push({ filename: 'Internship_Certificate.pdf', content: buffer });
+        } catch (e) { console.error("Failed to generate Internship Certificate:", e); }
+      }
+      if (project && (olSettings.documentTemplates?.projectCompletion?.pages?.length > 0 || olSettings.documentTemplates?.projectCompletion?.backgroundUrl)) {
+        try {
+          const buffer = await generateDynamicPDF(docData, olSettings.documentTemplates.projectCompletion);
+          attachments.push({ filename: 'Project_Certificate.pdf', content: buffer });
+        } catch (e) { console.error("Failed to generate Project Certificate:", e); }
+      }
+      if (lor && (olSettings.documentTemplates?.lor?.pages?.length > 0 || olSettings.documentTemplates?.lor?.backgroundUrl)) {
+        try {
+          const buffer = await generateDynamicPDF(docData, olSettings.documentTemplates.lor);
+          attachments.push({ filename: 'LOR.pdf', content: buffer });
+        } catch (e) { console.error("Failed to generate LOR:", e); }
+      }
+    }
+
     if (action === "accept") {
       resignation.status = "accepted";
       resignation.hrStatus = "approved";

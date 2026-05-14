@@ -382,60 +382,6 @@ router.post("/manager/login", async (req, res) => {
 });
 
 /* ============================
-   LOGIN (BY EMPLOYEE ID)
-============================ */
-router.post("/login", async (req, res) => {
-  try {
-    const { employeeId, password } = req.body;
-    console.log(`[DEBUG] Login attempt for EmployeeId: ${employeeId}`);
-
-    const employee = await Employee.findOne({ 
-      EmployeeId: { $regex: new RegExp(`^${employeeId}$`, 'i') } 
-    });
-
-    if (!employee) {
-      return res.status(404).json({ message: "Employee not found" });
-    }
-
-    if (!employee.password) {
-      employee.password = password;
-      await employee.save();
-      return res.json({
-        message: "Password set",
-        firstTime: true,
-        employee,
-      });
-    }
-
-    let isMatch = false;
-    if (employee.password.length === 60 || employee.password.startsWith('$2a$') || employee.password.startsWith('$2b$')) {
-        isMatch = await bcrypt.compare(password, employee.password);
-    } else {
-        isMatch = (employee.password === password);
-        if (isMatch) {
-            const salt = await bcrypt.genSalt(10);
-            employee.password = await bcrypt.hash(password, salt);
-            await employee.save();
-        }
-    }
-
-    if (!isMatch) {
-      return res.status(401).json({ message: "Wrong password" });
-    }
-
-    const token = jwt.sign(
-      { user: { id: employee.id, companyId: employee.companyId, role: 'employee' } },
-      process.env.JWT_SECRET || 'fallback_secret_key',
-      { expiresIn: '1d' }
-    );
-
-    res.json({ message: "Login successful", firstTime: false, employee, token });
-  } catch (error) {
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
-});
-
-/* ============================
    EMPLOYEE ID GENERATOR
 ============================ */
 const Counter = require("../models/counter.model");
@@ -461,12 +407,16 @@ async function generateEmployeeId(companyId) {
 
 router.get("/export/excel/all-employees", verifyTenant, async (req, res) => {
   try {
-    const { status = "all", from, to } = req.query;
+    const { status = "all", from, to, managerId } = req.query;
 
     const query =
       status === "all"
         ? { companyId: req.tenant.companyId }
         : { status, companyId: req.tenant.companyId };
+
+    if (managerId) {
+      query.assignedManager = managerId;
+    }
 
     let employees = await Employee.find(query).sort({ submittedAt: -1 });
 

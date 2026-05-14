@@ -11,11 +11,13 @@ const ExcelJS = require("exceljs");
 const { sendEmail, getLogoUrl } = require("../utilities/sendEmail");
 const { getSignature } = require("../utilities/emailSignature");
 const { generateOfferLetter } = require("../utilities/offerLetterGenerator");
+const { generateDynamicPDF } = require("../utilities/certificateGenerator");
 const fs = require('fs');
 const path = require('path');
 const { getAssetBuffer } = require("../utilities/assetHelper");
 const Company = require("../models/CompanyModel");
-
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
 
 const User = require("../models/User");
 const Role = require("../models/Role");
@@ -234,35 +236,54 @@ router.put("/accept/:id", verifyTenant,
 
       // 2. Fetch company for settings
       const company = await Company.findById(req.tenant.companyId);
-      const olSettings = company?.offerLetterSettings || {};
+      // Correct path: settings.offerLetterSettings
+      const olSettings = company?.settings?.offerLetterSettings || company?.offerLetterSettings || {};
 
-      // 3. Generate Offer Letter PDF Buffer on the fly
-      const pdfBuffer = await generateOfferLetter({
+      // 3. Prepare data for dynamic PDF generation
+      const docData = {
         fullName: intern.fullName,
-        role: role || intern.role,
+        internId: newId,
         onboardingDate: onboardingDate,
-        endDate: endDate
-      }, olSettings);
+        endDate: endDate,
+        role: role || intern.role,
+        companyName: olSettings.companyName,
+        workLocation: olSettings.workLocation
+      };
 
-      // 4. Prepare Attachments
-      const attachments = [
-        { filename: `${newId}-Offer-Letter.pdf`, content: pdfBuffer }
-      ];
+      const attachments = [];
+
+      // Offer Letter
+      if (olSettings.documentTemplates?.offerLetter?.pages?.length > 0 || olSettings.documentTemplates?.offerLetter?.backgroundUrl) {
+          const buffer = await generateDynamicPDF(docData, olSettings.documentTemplates.offerLetter);
+          attachments.push({ filename: `${newId}-Offer-Letter.pdf`, content: buffer });
+      } else {
+          // Fallback to legacy generator
+          const buffer = await generateOfferLetter(docData, olSettings);
+          attachments.push({ filename: `${newId}-Offer-Letter.pdf`, content: buffer });
+      }
 
       // Annexure
-      if (olSettings.annexureUrl) {
+      if (olSettings.documentTemplates?.annexure?.pages?.length > 0 || olSettings.documentTemplates?.annexure?.backgroundUrl) {
+          const buffer = await generateDynamicPDF(docData, olSettings.documentTemplates.annexure);
+          attachments.push({ filename: `${newId}-Annexure.pdf`, content: buffer });
+      } else if (olSettings.annexureUrl) {
           const annBuf = await getAssetBuffer(olSettings.annexureUrl);
           if (annBuf) attachments.push({ filename: `${newId}-Annexure.pdf`, content: annBuf });
       } else {
+          // Fallback to static asset
           const annexurePath = path.join(__dirname, '../assets/pdf/Softrate_Internship_Annexure.pdf');
           if (fs.existsSync(annexurePath)) attachments.push({ filename: `${newId}-Annexure.pdf`, content: fs.readFileSync(annexurePath) });
       }
 
       // NDA
-      if (olSettings.ndaUrl) {
+      if (olSettings.documentTemplates?.nda?.pages?.length > 0 || olSettings.documentTemplates?.nda?.backgroundUrl) {
+          const buffer = await generateDynamicPDF(docData, olSettings.documentTemplates.nda);
+          attachments.push({ filename: `${newId}-NDA.pdf`, content: buffer });
+      } else if (olSettings.ndaUrl) {
           const ndaBuf = await getAssetBuffer(olSettings.ndaUrl);
           if (ndaBuf) attachments.push({ filename: `${newId}-NDA.pdf`, content: ndaBuf });
       } else {
+          // Fallback to static asset
           const ndaPath = path.join(__dirname, '../assets/pdf/Internship NDA.pdf');
           if (fs.existsSync(ndaPath)) attachments.push({ filename: `${newId}-NDA.pdf`, content: fs.readFileSync(ndaPath) });
       }
@@ -355,37 +376,7 @@ async function generateInternId(companyId) {
   return internId;
 }
 
-
-
-router.post("/login", verifyTenant, async (req, res) => {
-  const { internid, password } = req.body;
-
-  const intern = await Intern.findOne({ internid });
-
-  if (!intern) {
-    return res.status(404).json({ message: "Intern not found" });
-  }
-
-  // First-time login
-  if (intern.password === "") {
-    intern.password = password; // No encryption
-    await intern.save();
-    return res.json({
-      message: "Password set",
-      firstTime: true,
-      intern,
-    });
-  }
-
-  // Normal login
-  if (intern.password !== password) {
-    return res.status(401).json({ message: "Wrong password" });
-  }
-
-  res.json({ message: "Login successful", firstTime: false, intern });
-});
-
-
+// Unified login is now handled in auth.routes.js
 
 // Get intern by internid or MongoDB _id
 router.get("/get/:id", verifyTenant, async (req, res) => {
@@ -487,12 +478,16 @@ router.get("/pastout", verifyTenant, async (req, res) => {
 
 router.get("/export/excel", verifyTenant, async (req, res) => {
   try {
-    const { status = "all", from, to } = req.query;
+    const { status = "all", from, to, managerId } = req.query;
 
     const query =
       status === "all"
-        ? {}
-        : { status };
+        ? { companyId: req.tenant.companyId }
+        : { status, companyId: req.tenant.companyId };
+        
+    if (managerId) {
+      query.assignedManager = managerId;
+    }
 
     let interns = await Intern.find(query).sort({ createdAt: -1 });
 

@@ -1,5 +1,6 @@
 const ExcelJS = require("exceljs");
 const express = require("express");
+const mongoose = require("mongoose");
 const verifyTenant = require("../middleware/tenant.middleware");
 const Attendance = require("../models/attendancemodel");
 const PDFDocument = require("pdfkit");
@@ -233,18 +234,40 @@ router.get("/export/pdf/:internId", verifyTenant, async (req, res) => {
       return res.status(400).json({ message: "from & to dates required" });
     }
 
+    // 1. Resolve Name and Custom ID
+    console.log('Resolving ID for export:', internId);
+    let intern = await Intern.findOne({ internid: internId });
+    if (!intern && mongoose.Types.ObjectId.isValid(internId)) {
+      intern = await Intern.findById(internId);
+    }
+
+    let employee = null;
+    if (!intern) {
+      const Employee = require("../models/EmployeeModel");
+      employee = await Employee.findOne({ EmployeeId: internId });
+      if (!employee && mongoose.Types.ObjectId.isValid(internId)) {
+        employee = await Employee.findById(internId);
+      }
+    }
+
+    const fullName = intern?.fullName || employee?.fullName || "N/A";
+    const resolvedId = intern?.internid || employee?.EmployeeId || internId;
+    console.log('Resolved Name:', fullName, 'Resolved ID:', resolvedId);
+
+    // 2. Query Attendance using Resolved ID
     const records = await Attendance.find({
-      internId,
+      internId: resolvedId,
       date: {
         $gte: from,
         $lte: to,
       },
     }).sort({ date: 1 });
+    console.log('Records found:', records.length);
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename=attendance_${internId}.pdf`
+      `attachment; filename=attendance_${resolvedId}.pdf`
     );
 
     const doc = new PDFDocument({ margin: 40, size: "A4" });
@@ -261,7 +284,8 @@ router.get("/export/pdf/:internId", verifyTenant, async (req, res) => {
     doc
       .fontSize(11)
       .fillColor("black")
-      .text(`Intern ID : ${internId}`)
+      .text(`Name : ${fullName}`)
+      .text(`ID : ${resolvedId}`)
       .text(
         `Period : ${moment(from).format("DD MMM YYYY")} - ${moment(to).format(
           "DD MMM YYYY"
@@ -496,10 +520,6 @@ router.get("/export/excel/all-interns", verifyTenant, async (req, res) => {
     res.status(500).json({ message: "Excel export failed" });
   }
 });
-
-
-
-
 
 // 📌 Manual Update Attendance (HR only)
 router.post("/update-manual", verifyTenant, async (req, res) => {

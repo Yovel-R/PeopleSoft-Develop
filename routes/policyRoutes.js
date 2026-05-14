@@ -5,14 +5,22 @@ const Policy = require("../models/Policy");
 
 /* GET ALL */
 router.get("/all", verifyTenant, async (req, res) => {
-  const policies = await Policy.find().sort({ createdAt: -1 });
-  res.json(policies);
+  try {
+    const policies = await Policy.find({ companyId: req.tenant.companyId }).sort({ createdAt: -1 });
+    res.json(policies);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 /* CREATE SINGLE */
 router.post("/add", verifyTenant, async (req, res) => {
   try {
-    const policy = new Policy(req.body);
+    const policyData = {
+      ...req.body,
+      companyId: req.tenant.companyId
+    };
+    const policy = new Policy(policyData);
     await policy.save();
     res.status(201).json(policy);
   } catch (err) {
