@@ -8,7 +8,10 @@ const Intern = require('../models/Intern');
 // Fetch all managers
 router.get("/managers", verifyTenant, async (req, res) => {
   try {
-    const managers = await Employee.find({ isManager: true }).select('fullName _id department role EmployeeId');
+    const managers = await Employee.find({ 
+      isManager: true,
+      isHr: { $ne: true } 
+    }).select('fullName _id department role EmployeeId isHr');
     res.json(managers);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -19,15 +22,17 @@ router.get("/managers", verifyTenant, async (req, res) => {
 router.get("/unassigned", verifyTenant, async (req, res) => {
   try {
     const unassignedInterns = await Intern.find({
-      status: { $in: ['approved', 'ongoing'] }
+      status: { $in: ['approved', 'ongoing'] },
+      isHr: { $ne: true }
     }).populate('assignedManager', 'fullName')
-      .select('fullName _id role department college email phone createdAt status assignedManager internid managerApprovalStatus');
+      .select('fullName _id role department college email phone createdAt status assignedManager internid managerApprovalStatus isHr');
 
     const unassignedEmployees = await Employee.find({
       status: { $in: ['active', 'approved'] },
-      isManager: false
+      isManager: false,
+      isHr: { $ne: true }
     }).populate('assignedManager', 'fullName')
-      .select('fullName _id role department EmployeeId email phone assignedManager');
+      .select('fullName _id role department EmployeeId email phone assignedManager isHr');
 
     res.json({
       interns: unassignedInterns,

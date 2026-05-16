@@ -30,6 +30,7 @@ const InternSchema = new mongoose.Schema({
   assignedManager: { type: mongoose.Schema.Types.ObjectId, ref: "Employee", default: null },
   managerApprovalStatus: { type: String, enum: ["initial", "pending", "approved", "rejected"], default: "initial" },
   managerRemarks: { type: String, default: "" },
+  isHr: { type: Boolean, default: false },
 
   status: { type: String, default: "initial" },
   leaveCount: { type: Number, default: 0 },

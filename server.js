@@ -32,7 +32,6 @@ app.use('/api/intern', require('./routes/internRoutes'));
 app.use('/api/auth', require('./routes/auth.routes'));
 app.use('/api/attendance', require('./routes/attendanceroutes'));
 app.use('/api/reviews', require('./routes/internReview.route'));
-app.use('/api/leave', require('./routes/employeeLeave.routes'));
 app.use('/api/resignation', require('./routes/resignation.routes'));
 app.use('/api', require('./routes/send-documents'));
 app.use('/api/employee', require('./routes/EmployeeRouter'));
@@ -50,6 +49,7 @@ app.use('/api/projects', require('./routes/project.routes'));
 app.use('/api/onboarding', require('./routes/onboarding.routes'));
 app.use('/api/settings', require('./routes/settings.routes'));
 app.use('/api/performance-templates', require('./routes/performance.routes'));
+app.use('/api/convert', require('./routes/conversion.routes'));
 
 // ============================
 // Test Route
@@ -60,10 +60,36 @@ app.get('/', (req, res) => {
 
 
 // ============================
-// Start Server
+// Start Server with Socket.io
 // ============================
 const PORT = process.env.PORT || 5001;
+const http = require('http');
+const { Server } = require('socket.io');
 
-app.listen(PORT, () => {
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE']
+  }
+});
+
+// Make io accessible in routes
+app.set('io', io);
+
+io.on('connection', (socket) => {
+  console.log('🔌 New client connected:', socket.id);
+  
+  socket.on('join-room', (roomId) => {
+    socket.join(roomId);
+    console.log(`🏠 Client ${socket.id} joined room: ${roomId}`);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('🔌 Client disconnected:', socket.id);
+  });
+});
+
+server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });

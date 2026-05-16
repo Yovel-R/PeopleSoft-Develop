@@ -116,6 +116,12 @@ router.post("/add", verifyPublicTenant, async (req, res) => {
 
     await newIntern.save();
 
+    // Trigger Real-Time Dashboard Update
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('activity-updated', { type: 'new_intern', intern: newIntern });
+    }
+
     // Send Notification Email to HR with the Resume
     try {
       const attachments = [];
@@ -297,32 +303,56 @@ router.put("/accept/:id", verifyTenant,
       if (role) intern.role = role;
 
       await intern.save();
+      
+      // 5. Synchronize with User Record (Unified Collection)
+      const updatedUser = await User.findOneAndUpdate(
+        { email: { $regex: new RegExp(`^${intern.email.trim()}$`, 'i') }, companyId: req.tenant.companyId },
+        { 
+          'employment.status': 'approved',
+          'employment.joinedAt': onboardingDate,
+          'employment.endDate': endDate,
+          'system.onboardingStatus': 'completed'
+        },
+        { new: true }
+      );
+
+      if (updatedUser) {
+        console.log(`[DEBUG] Updated User record for approved intern: ${intern.email}`);
+      } else {
+        console.log(`[DEBUG] Warning: No User record found for approved intern: ${intern.email}`);
+      }
 
       console.log("Intern saved successfully. Preparing to send email with generated documents...");
       
-      await sendEmail({
-        to: intern.email,
-        subject: "Internship Application – Approval Notification",
-        html: `
-          <p>Dear ${intern.fullName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')},</p>
-          <p>This is to inform you that your application has been reviewed and your profile has been approved for the internship program.</p>
-          <p>Your internship details are as follows:</p>
-          <ul>
-            <li>Intern ID: ${newId}</li>
-            <li>Onboarding Date: ${new Date(onboardingDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}</li>
-            <li>End Date: ${new Date(endDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}</li>
-          </ul>
-          <p style="margin: 0 0 0 0;">To proceed further, please log in to the HRMS portal using the credentials shared separately.</p>
-          <p style="margin: 0 0 0 0;">For first-time login, you will be required to set your own password and complete your profile by providing the necessary details.</p>
-          <p style="margin: 0 0 0 0;">Kindly ensure that all required information is submitted before your onboarding date to avoid any delays.</p>
-          <p style="margin: 0 0 15px 0;">For any queries, feel free to contact us.</p>
-          ${getSignature(getLogoUrl())}
-        `,
-        attachments: attachments,
-        replyTo: req.tenant.receivingEmail,
-      });
+      try {
+        await sendEmail({
+          to: intern.email,
+          subject: "Internship Application – Approval Notification",
+          html: `
+            <p>Dear ${intern.fullName.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')},</p>
+            <p>This is to inform you that your application has been reviewed and your profile has been approved for the internship program.</p>
+            <p>Your internship details are as follows:</p>
+            <ul>
+              <li>Intern ID: ${newId}</li>
+              <li>Onboarding Date: ${new Date(onboardingDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}</li>
+              <li>End Date: ${new Date(endDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}</li>
+            </ul>
+            <p style="margin: 0 0 0 0;">To proceed further, please log in to the HRMS portal using the credentials shared separately.</p>
+            <p style="margin: 0 0 0 0;">For first-time login, you will be required to set your own password and complete your profile by providing the necessary details.</p>
+            <p style="margin: 0 0 0 0;">Kindly ensure that all required information is submitted before your onboarding date to avoid any delays.</p>
+            <p style="margin: 0 0 15px 0;">For any queries, feel free to contact us.</p>
+            ${getSignature(getLogoUrl())}
+          `,
+          attachments: attachments,
+          replyTo: req.tenant.receivingEmail,
+        });
+        console.log(`[DEBUG] Approval email sent to intern: ${intern.email}`);
+      } catch (emailErr) {
+        console.error("[DEBUG] Failed to send intern approval email:", emailErr);
+        // Do not fail the request if only email fails
+      }
 
-      res.json({ message: "Intern approved & email sent with Offer Letter", intern });
+      res.json({ success: true, message: "Intern approved & onboarded successfully", intern });
     } catch (err) {
       console.error("Approve Error [FULL STACK]:", err.stack);
       console.error("Approve Error:", err);
@@ -614,6 +644,37 @@ router.put("/manager-review/:id", verifyTenant, async (req, res) => {
     res.json({ message: `Intern ${status} by manager`, intern });
   } catch (error) {
     res.status(500).json({ message: "Server error", error });
+  }
+});
+
+router.put("/update/:id", verifyTenant, async (req, res) => {
+  try {
+    const updatedIntern = await Intern.findOneAndUpdate(
+      { _id: req.params.id, companyId: req.tenant.companyId },
+      { $set: req.body },
+      { new: true }
+    );
+
+    if (!updatedIntern) return res.status(404).json({ message: "Intern not found" });
+
+    // Sync with User record
+    if (req.body.email || req.body.fullName || req.body.contact) {
+      await User.findOneAndUpdate(
+        { email: { $regex: new RegExp(`^${updatedIntern.email.trim()}$`, 'i') }, companyId: req.tenant.companyId },
+        { 
+          $set: {
+            'profile.firstName': updatedIntern.fullName,
+            'profile.phone': updatedIntern.contact,
+            'employment.designation': updatedIntern.role
+          }
+        }
+      );
+    }
+
+    res.json({ message: "Intern updated successfully", intern: updatedIntern });
+  } catch (err) {
+    console.error("Intern Update Error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 });
 

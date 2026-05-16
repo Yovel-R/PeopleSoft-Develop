@@ -28,6 +28,8 @@ exports.login = async (req, res) => {
     // User model is already imported at top
 
     // ── 2. Lookup ──
+    console.log(`[LOGIN] Identifier: ${id}`);
+    
     // Try Intern
     user = await Intern.findOne({
       $or: [
@@ -35,7 +37,10 @@ exports.login = async (req, res) => {
         { email:    { $regex: new RegExp(`^${id}$`, "i") } }
       ]
     });
-    if (user) role = "intern";
+    if (user) {
+      role = user.isHr ? "hr" : "intern";
+      console.log(`[LOGIN] Found in Intern collection. Role: ${role}`);
+    }
 
     // Try Employee / Manager
     if (!user) {
@@ -45,7 +50,10 @@ exports.login = async (req, res) => {
           { email:      { $regex: new RegExp(`^${id}$`, "i") } }
         ]
       });
-      if (user) role = user.isManager ? "manager" : "employee";
+      if (user) {
+        role = user.isHr ? "hr" : (user.isManager ? "manager" : "employee");
+        console.log(`[LOGIN] Found in Employee collection. Role: ${role}`);
+      }
     }
 
     // Try HR (User)
@@ -55,8 +63,13 @@ exports.login = async (req, res) => {
           { employeeId: { $regex: new RegExp(`^${id}$`, "i") } },
           { email:      { $regex: new RegExp(`^${id}$`, "i") } }
         ]
-      }).select('+password');
-      if (user) role = "hr";
+      }).select('+password').populate('roleId');
+      
+      if (user) {
+        // Use the actual name from Role model if available, fallback to 'hr'
+        role = user.roleId?.name?.toLowerCase() || "hr";
+        console.log(`[LOGIN] Found in User collection. Role: ${role}`);
+      }
     }
 
     if (!user) {
@@ -129,12 +142,39 @@ exports.login = async (req, res) => {
  */
 exports.getMe = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).populate('roleId companyId departmentId branchId');
+    let role = "employee";
+
+    // 1. Try User collection first
+    let user = await User.findById(req.user.id).populate('roleId companyId departmentId branchId');
+    if (user) {
+      role = user.roleId?.name?.toLowerCase() || "hr";
+    }
+    
+    // 2. If not found in User, try Employee (for managers/employees who logged in directly)
+    if (!user) {
+      const Employee = require("../models/EmployeeModel");
+      user = await Employee.findById(req.user.id);
+      if (user) {
+        role = user.isHr ? "hr" : (user.isManager ? "manager" : "employee");
+      }
+    }
+    
+    // 3. If still not found, try Intern
+    if (!user) {
+      const Intern = require("../models/Intern");
+      user = await Intern.findById(req.user.id);
+      if (user) {
+        role = user.isHr ? "hr" : "intern";
+      }
+    }
+
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
-    res.status(200).json({ success: true, user });
+
+    res.status(200).json({ success: true, user, role });
   } catch (err) {
+    console.error("getMe Error:", err);
     res.status(500).json({ success: false, message: 'Server error' });
   }
 };
@@ -245,5 +285,46 @@ exports.resetPassword = async (req, res) => {
   } catch (err) {
     console.error("Reset Password Error:", err);
     res.status(500).json({ success: false, message: "Server error", error: err.message });
+  }
+};
+
+/**
+ * Publicly verify a company code and return basic settings
+ */
+exports.verifyCompany = async (req, res) => {
+  try {
+    const { code } = req.params;
+    if (!code) {
+      return res.status(400).json({ success: false, message: "Company code is required" });
+    }
+
+    const Company = require("../models/CompanyModel");
+    const company = await Company.findOne({ companyCode: code.toUpperCase() });
+
+    if (!company) {
+      return res.status(404).json({ success: false, message: "Company not found" });
+    }
+
+    const companyObj = company.toObject();
+    const settings = companyObj.settings || {};
+    const employeeRoles = Array.from(new Set([...(settings.employeeRoles || []), 'Other']));
+    const internRoles = Array.from(new Set([...(settings.internRoles || []), 'Other']));
+
+    res.json({
+      success: true,
+      company: {
+        id: company._id,
+        name: company.name,
+        logo: company.logo,
+        settings: {
+          themeColor: settings.themeColor || '#00657F',
+          employeeRoles: employeeRoles,
+          internRoles: internRoles
+        }
+      }
+    });
+  } catch (err) {
+    console.error("Verify Company Error:", err);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };

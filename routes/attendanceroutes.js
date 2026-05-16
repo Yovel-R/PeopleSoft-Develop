@@ -6,6 +6,7 @@ const Attendance = require("../models/attendancemodel");
 const PDFDocument = require("pdfkit");
 const moment = require("moment");
 const Intern = require("../models/Intern");
+const Employee = require("../models/EmployeeModel");
 const Holiday = require("../models/Holiday"); 
 const router = express.Router();
 
@@ -73,6 +74,10 @@ router.post("/punch-in", verifyTenant, async (req, res) => {
 
     await record.save();
 
+    // Emit real-time event
+    const io = req.app.get('io');
+    io.emit('punch-event', { type: 'intern', action: 'punch-in', record });
+
     return res.json({ message: "Punch In successful", record });
   } catch (err) {
     console.log(err);
@@ -114,6 +119,10 @@ router.post("/punch-out", verifyTenant, async (req, res) => {
 
     await record.save();
 
+    // Emit real-time event
+    const io = req.app.get('io');
+    io.emit('punch-event', { type: 'intern', action: 'punch-out', record });
+
     return res.json({ message: "Punch Out successful", record });
   } catch (err) {
     console.log(err);
@@ -147,66 +156,134 @@ router.get("/intern/:id", verifyTenant, async (req, res) => {
   }
 });
 
-router.get("/today/all", verifyTenant, async (req, res) => {
+router.get("/today/unified", verifyTenant, async (req, res) => {
   try {
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const { managerId } = req.query;
+    
+    // Filter by company and optional manager
+    const matchQuery = { companyId: req.tenant.companyId };
+    if (managerId) {
+      matchQuery.assignedManager = new mongoose.Types.ObjectId(managerId);
+    }
 
-    // Aggregation: join interns with today's attendance
-    const attendanceData = await Intern.aggregate([
+    // 1. Fetch Interns with Attendance
+    const interns = await Intern.aggregate([
+      { $match: { ...matchQuery, status: { $nin: ["initial", "drop"] } } },
       {
-        $match: { status: { $nin: ["initial", "drop"] } }
-      },
-      {
-        // Lookup today's attendance
         $lookup: {
-          from: "attendances", // your attendance collection name
+          from: "attendances",
           let: { internId: "$internid" },
           pipeline: [
             { 
               $match: { 
                 $expr: { $eq: ["$internId", "$$internId"] },
-                date: today,
-                punchInTime: { $exists: true }
+                date: today
               } 
             }
           ],
           as: "attendance"
         }
       },
+      { $unwind: { path: "$attendance", preserveNullAndEmptyArrays: true } },
       {
-        $unwind: {
-          path: "$attendance",
-          preserveNullAndEmptyArrays: true // keep interns with no attendance
+        $project: {
+          id: "$internid",
+          name: "$fullName",
+          type: { $literal: "Intern" },
+          department: 1,
+          punchInTime: "$attendance.punchInTime",
+          punchOutTime: "$attendance.punchOutTime",
+          punchInLocation: "$attendance.punchInLocation",
+          punchOutLocation: "$attendance.punchOutLocation",
+          duration: { $ifNull: ["$attendance.duration", "--"] },
+          status: { $cond: [{ $ifNull: ["$attendance.punchInTime", false] }, "Present", "Absent"] }
+        }
+      }
+    ]);
+
+    // 2. Fetch Employees with Attendance
+    const employees = await Employee.aggregate([
+      { $match: matchQuery },
+      {
+        $lookup: {
+          from: "employeeattendances",
+          let: { empId: "$EmployeeId" },
+          pipeline: [
+            { 
+              $match: { 
+                $expr: { $eq: ["$employeeId", "$$empId"] },
+                date: today
+              } 
+            }
+          ],
+          as: "attendance"
         }
       },
+      { $unwind: { path: "$attendance", preserveNullAndEmptyArrays: true } },
+      {
+        $project: {
+          id: "$EmployeeId",
+          name: "$fullName",
+          type: { $literal: "Employee" },
+          department: 1,
+          punchInTime: "$attendance.punchInTime",
+          punchOutTime: "$attendance.punchOutTime",
+          punchInLocation: "$attendance.punchInLocation",
+          punchOutLocation: "$attendance.punchOutLocation",
+          duration: { $ifNull: ["$attendance.duration", "--"] },
+          status: { $cond: [{ $ifNull: ["$attendance.punchInTime", false] }, "Present", "Absent"] }
+        }
+      }
+    ]);
+
+    const combined = [...interns, ...employees].sort((a, b) => {
+      if (a.status === b.status) return a.name.localeCompare(b.name);
+      return a.status === "Present" ? -1 : 1;
+    });
+
+    res.json({
+      date: today,
+      count: combined.filter(a => a.status === "Present").length,
+      attendance: combined
+    });
+  } catch (err) {
+    console.error("Unified attendance error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.get("/today/all", verifyTenant, async (req, res) => {
+  // Existing logic kept for compatibility
+  try {
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const attendanceData = await Intern.aggregate([
+      { $match: { status: { $nin: ["initial", "drop"] } } },
+      {
+        $lookup: {
+          from: "attendances",
+          let: { internId: "$internid" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$internId", "$$internId"] }, date: today, punchInTime: { $exists: true } } }
+          ],
+          as: "attendance"
+        }
+      },
+      { $unwind: { path: "$attendance", preserveNullAndEmptyArrays: true } },
       {
         $project: {
           internId: "$internid",
-          name: { $concat: [
-            { $toUpper: { $substrCP: ["$fullName", 0, 1] } }, // capitalize first letter
-            { $substrCP: ["$fullName", 1, { $strLenCP: "$fullName" }] }
-          ]},
+          name: { $concat: [{ $toUpper: { $substrCP: ["$fullName", 0, 1] } }, { $substrCP: ["$fullName", 1, { $strLenCP: "$fullName" }] }] },
           contact: 1, 
           punchInTime: "$attendance.punchInTime",
           punchOutTime: "$attendance.punchOutTime",
           duration: { $ifNull: ["$attendance.duration", "--"] }
         }
       },
-      {
-        $sort: { punchInTime: 1 } 
-      }
+      { $sort: { punchInTime: 1 } }
     ]);
-
-    res.json({
-      date: today,
-      count: attendanceData.filter(a => a.punchInTime).length, // only count present
-      attendance: attendanceData
-    });
-
-  } catch (err) {
-    console.error("Error in /today/all:", err);
-    res.status(500).json({ message: "Server error" });
-  }
+    res.json({ date: today, count: attendanceData.filter(a => a.punchInTime).length, attendance: attendanceData });
+  } catch (err) { res.status(500).json({ message: "Server error" }); }
 });
 
 

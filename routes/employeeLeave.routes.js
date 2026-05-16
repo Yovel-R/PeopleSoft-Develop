@@ -7,11 +7,13 @@ const Intern = require("../models/Intern");
 const Employee = require("../models/EmployeeModel");
 const Leave = require("../models/leave.model"); // legacy intern leaves
 const verifyTenant = require("../middleware/tenant.middleware");
+const multer = require("multer");
+const upload = multer({ storage: multer.memoryStorage() });
 
 /* ============================
    APPLY LEAVE
 ============================ */
-router.post("/apply", verifyTenant, async (req, res) => {
+router.post("/apply", verifyTenant, upload.single("document"), async (req, res) => {
   try {
     const data = req.body;
 
@@ -79,6 +81,18 @@ router.post("/apply", verifyTenant, async (req, res) => {
       normalizedLeaveType = counter.leaveType;
     }
 
+    // Parse perDayDurations if it was sent as a JSON string via multipart
+    let parsedDurations = {};
+    if (typeof data.perDayDurations === "string") {
+      try {
+        parsedDurations = JSON.parse(data.perDayDurations);
+      } catch (e) {
+        console.error("Failed to parse perDayDurations string", e);
+      }
+    } else {
+      parsedDurations = data.perDayDurations || {};
+    }
+
     // 4. Create Leave Request
     const leave = await EmployeeLeave.create({
       companyId: req.tenant.companyId,
@@ -93,8 +107,13 @@ router.post("/apply", verifyTenant, async (req, res) => {
       hrStatus: "pending",
       managerId: assignedManagerId ? assignedManagerId.toString() : null,
       rejectionReason: "",
-      perDayDurations: data.perDayDurations || {},
+      perDayDurations: parsedDurations,
     });
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('activity-updated', { type: 'new_leave', leave });
+    }
 
     res.json({ success: true, leaveId: leave._id });
   } catch (err) {

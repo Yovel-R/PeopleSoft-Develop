@@ -46,30 +46,31 @@ exports.hrSignup = async (req, res) => {
 // Save HR Policy URL
 exports.savePolicyUrl = async (req, res) => {
   try {
-    const { email, policyUrl } = req.body;
+    const { policyUrl } = req.body;
+    const companyId = req.tenant.companyId;
 
-    if (!email || !policyUrl) {
-      return res.status(400).json({ msg: "Email and policyUrl are required" });
+    if (!policyUrl) {
+      return res.status(400).json({ msg: "policyUrl is required" });
     }
 
-    const hrUser = await hrModel.findOneAndUpdate(
-      { email },
+    const company = await Company.findByIdAndUpdate(
+      companyId,
       { 
-        hr_policy_url: policyUrl,
-        policy_updated_at: new Date()
+        "settings.hrPolicyUrl": policyUrl,
+        "settings.hrPolicyUpdatedAt": new Date()
       },
       { new: true }
     );
 
-    if (!hrUser) {
-      return res.status(404).json({ msg: "HR user not found" });
+    if (!company) {
+      return res.status(404).json({ msg: "Company not found" });
     }
 
     res.json({ 
       success: true,
       msg: "Policy URL saved successfully",
-      policy_url: hrUser.hr_policy_url,
-      policy_updated_at: hrUser.policy_updated_at
+      policy_url: company.settings.hrPolicyUrl,
+      policy_updated_at: company.settings.hrPolicyUpdatedAt
     });
   } catch (err) {
     res.status(500).json({ msg: "Server error", error: err.message });
@@ -79,44 +80,59 @@ exports.savePolicyUrl = async (req, res) => {
 // Get HR Policy URL
 exports.getPolicyUrl = async (req, res) => {
   try {
-    const { email } = req.query;
+    const companyId = req.tenant.companyId;
 
-    if (!email) {
-      return res.status(400).json({ msg: "Email is required" });
-    }
+    const company = await Company.findById(companyId)
+      .select("settings.hrPolicyUrl settings.hrPolicyUpdatedAt");
 
-    const hrUser = await hrModel
-      .findOne({ email })
-      .select("hr_policy_url policy_updated_at");
-
-    if (!hrUser) {
-      return res.status(404).json({ msg: "HR user not found" });
+    if (!company || !company.settings.hrPolicyUrl) {
+      // Fallback for backward compatibility
+      const hrUser = await hrModel.findOne().select("hr_policy_url policy_updated_at");
+      if (hrUser && hrUser.hr_policy_url) {
+        return res.json({ 
+          success: true,
+          policy_url: hrUser.hr_policy_url,
+          policy_updated_at: hrUser.policy_updated_at
+        });
+      }
+      return res.status(404).json({ msg: "Company/Policy not found" });
     }
 
     res.json({ 
       success: true,
-      policy_url: hrUser.hr_policy_url,
-      policy_updated_at: hrUser.policy_updated_at
+      policy_url: company.settings.hrPolicyUrl,
+      policy_updated_at: company.settings.hrPolicyUpdatedAt
     });
   } catch (err) {
     res.status(500).json({ msg: "Server error", error: err.message });
   }
 };
 
-// Get HR Policy URL for Interns
+// Get HR Policy URL for Interns/Staff
 exports.getPolicyForInterns = async (req, res) => {
   try {
-    // Note: In multi-tenant, this should be scoped by companyId!
-    const hrUser = await hrModel.findOne().select("hr_policy_url policy_updated_at");
+    const companyId = req.tenant.companyId;
 
-    if (!hrUser || !hrUser.hr_policy_url) {
+    const company = await Company.findById(companyId)
+      .select("settings.hrPolicyUrl settings.hrPolicyUpdatedAt");
+
+    if (!company || !company.settings.hrPolicyUrl) {
+      // Fallback to searching in hrModel
+      const hrUser = await hrModel.findOne().select("hr_policy_url policy_updated_at");
+      if (hrUser && hrUser.hr_policy_url) {
+        return res.json({
+          success: true,
+          policy_url: hrUser.hr_policy_url.trim(),
+          policy_updated_at: hrUser.policy_updated_at
+        });
+      }
       return res.status(404).json({ success: false, msg: "No HR policy available" });
     }
 
     res.json({
       success: true,
-      policy_url: hrUser.hr_policy_url.trim(),
-      policy_updated_at: hrUser.policy_updated_at
+      policy_url: company.settings.hrPolicyUrl ? company.settings.hrPolicyUrl.trim() : null,
+      policy_updated_at: company.settings.hrPolicyUpdatedAt
     });
   } catch (err) {
     res.status(500).json({ success: false, msg: "Server error", error: err.message });

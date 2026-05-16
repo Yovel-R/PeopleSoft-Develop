@@ -263,7 +263,24 @@ router.put("/accept/:id", verifyTenant, async (req, res) => {
 
     await employee.save();
 
-    // Initialize leave counter
+    // 2. Synchronize with User Record (Unified Collection)
+    const updatedUser = await User.findOneAndUpdate(
+      { email: { $regex: new RegExp(`^${employee.email.trim()}$`, 'i') }, companyId: req.tenant.companyId },
+      { 
+        'employment.status': 'approved',
+        'employment.joinedAt': onboardingDate,
+        'system.onboardingStatus': 'completed'
+      },
+      { new: true }
+    );
+
+    if (updatedUser) {
+      console.log(`[DEBUG] Updated User record for approved employee: ${employee.email}`);
+    } else {
+      console.log(`[DEBUG] Warning: No User record found for approved employee: ${employee.email}`);
+    }
+
+    // 3. Initialize leave counter
     const startDate = new Date(onboardingDate);
     const nextResetDate = new Date(startDate);
     nextResetDate.setFullYear(startDate.getFullYear() + 1);
@@ -287,20 +304,26 @@ router.put("/accept/:id", verifyTenant, async (req, res) => {
 
     await LeaveCounter.insertMany(records, { ordered: false }).catch(() => {});
 
-    // Send approval email (no attachments)
-    await sendEmail({
-      to: employee.email,
-      subject: "Your Employee ID is Ready",
-      html: `<div style="font-family: sans-serif; line-height: 1.6; color: #333;">
-               <h2>Hi ${employee.fullName},</h2>
-               <p>Your profile has been <b>approved</b> 🎉</p>
-               <p><b>Employee ID:</b> ${newEmployeeId}</p>
-               <p><b>Onboarding Date:</b> ${onboardingDate}</p>
-               ${getSignature(LOGO_URL)}
-             </div>`,
-    });
+    // 4. Send approval email (Wrapped in try-catch to avoid failing the whole request if email fails)
+    try {
+      await sendEmail({
+        to: employee.email,
+        subject: "Your Employee ID is Ready",
+        html: `<div style="font-family: sans-serif; line-height: 1.6; color: #333;">
+                 <h2>Hi ${employee.fullName},</h2>
+                 <p>Your profile has been <b>approved</b> 🎉</p>
+                 <p><b>Employee ID:</b> ${newEmployeeId}</p>
+                 <p><b>Onboarding Date:</b> ${onboardingDate}</p>
+                 ${getSignature(LOGO_URL)}
+               </div>`,
+      });
+      console.log(`[DEBUG] Approval email sent to: ${employee.email}`);
+    } catch (emailErr) {
+      console.error("[DEBUG] Failed to send approval email:", emailErr);
+      // We do NOT return error here, because the DB records are already updated successfully
+    }
 
-    res.json({ message: "Employee approved & email sent", employee });
+    res.json({ success: true, message: "Employee approved & onboarded successfully", employee });
   } catch (err) {
     console.error("Employee Accept Error:", err);
     res.status(500).json({ message: "Server error", error: err.message });
@@ -312,7 +335,16 @@ router.put("/accept/:id", verifyTenant, async (req, res) => {
 ============================ */
 router.delete("/delete/:id", verifyTenant, async (req, res) => {
   try {
-    const employee = await Employee.findOneAndDelete({ _id: req.params.id, companyId: req.tenant.companyId });
+    const { id } = req.params;
+    let query = { companyId: req.tenant.companyId };
+    
+    if (id.match(/^[0-9a-fA-F]{24}$/)) {
+      query._id = id;
+    } else {
+      query.EmployeeId = { $regex: new RegExp(`^${id}$`, 'i') };
+    }
+
+    const employee = await Employee.findOneAndDelete(query);
 
     if (!employee) {
       return res.status(404).json({ message: "Employee not found" });
@@ -327,7 +359,16 @@ router.delete("/delete/:id", verifyTenant, async (req, res) => {
 // Alias for delete to match some frontend calls
 router.delete("/reject/:id", verifyTenant, async (req, res) => {
   try {
-    const employee = await Employee.findOneAndDelete({ _id: req.params.id, companyId: req.tenant.companyId });
+    const { id } = req.params;
+    let query = { companyId: req.tenant.companyId };
+    
+    if (id.match(/^[0-9a-fA-F]{24}$/)) {
+      query._id = id;
+    } else {
+      query.EmployeeId = { $regex: new RegExp(`^${id}$`, 'i') };
+    }
+
+    const employee = await Employee.findOneAndDelete(query);
     if (!employee) return res.status(404).json({ message: "Employee not found" });
     res.json({ message: "Employee rejected/deleted", employee });
   } catch (error) {
@@ -553,6 +594,46 @@ router.put("/toggle-manager/:id", verifyTenant, async (req, res) => {
   } catch (err) {
     console.error("Toggle Manager Error:", err);
     res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.put("/update/:id", verifyTenant, async (req, res) => {
+  try {
+    const { id } = req.params;
+    let query = { companyId: req.tenant.companyId };
+    
+    if (id.match(/^[0-9a-fA-F]{24}$/)) {
+      query._id = id;
+    } else {
+      query.EmployeeId = { $regex: new RegExp(`^${id}$`, 'i') };
+    }
+
+    const updatedEmployee = await Employee.findOneAndUpdate(
+      query,
+      { $set: req.body },
+      { new: true }
+    );
+
+    if (!updatedEmployee) return res.status(404).json({ message: "Employee not found" });
+
+    // Sync with User record if email or profile fields changed
+    if (req.body.email || req.body.fullName || req.body.phone) {
+      await User.findOneAndUpdate(
+        { email: { $regex: new RegExp(`^${updatedEmployee.email.trim()}$`, 'i') }, companyId: req.tenant.companyId },
+        { 
+          $set: {
+            'profile.firstName': updatedEmployee.fullName,
+            'profile.phone': updatedEmployee.phone,
+            'employment.designation': updatedEmployee.designation || updatedEmployee.role
+          }
+        }
+      );
+    }
+
+    res.json({ message: "Employee updated successfully", employee: updatedEmployee });
+  } catch (err) {
+    console.error("Employee Update Error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 });
 

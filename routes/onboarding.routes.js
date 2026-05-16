@@ -40,6 +40,10 @@ router.post('/register', async (req, res) => {
       name: companyName,
       companyCode: companyCode.toUpperCase(),
       subscriptionStatus: 'trial', // Default 
+      settings: {
+        internRoles: ['Other'],
+        employeeRoles: ['Other']
+      }
     });
 
     const savedCompany = await newCompany.save();
@@ -48,11 +52,57 @@ router.post('/register', async (req, res) => {
     const adminRole = new Role({
       companyId: savedCompany._id,
       name: 'HR_ADMIN',
-      description: 'Master administrator for the company',
+      description: 'Master administrator with full system access',
       permissions: ['*'], // Full access
       isSystemDefined: true
     });
-    const savedRole = await adminRole.save();
+    const savedAdminRole = await adminRole.save();
+
+    // 4b. Create the Standard HR Role
+    const hrRole = new Role({
+      companyId: savedCompany._id,
+      name: 'HR',
+      description: 'Standard HR staff with limited access',
+      permissions: [
+        'VIEW_EMPLOYEES', 'MANAGE_LEAVES', 'VIEW_INTERNS', 
+        'MANAGE_ATTENDANCE', 'VIEW_DOCUMENTS'
+      ],
+      isSystemDefined: true
+    });
+    await hrRole.save();
+
+    // 4c. Create the Manager Role
+    const managerRole = new Role({
+      companyId: savedCompany._id,
+      name: 'MANAGER',
+      description: 'Team manager with approval permissions',
+      permissions: [
+        'APPROVE_LEAVES', 'APPROVE_ATTENDANCE', 'VIEW_TEAM',
+        'CONVERT_INTERN'
+      ],
+      isSystemDefined: true
+    });
+    await managerRole.save();
+
+    // 4d. Create the Employee Role
+    const employeeRole = new Role({
+      companyId: savedCompany._id,
+      name: 'EMPLOYEE',
+      description: 'Standard employee permissions',
+      permissions: ['VIEW_DASHBOARD', 'REQUEST_LEAVE'],
+      isSystemDefined: true
+    });
+    await employeeRole.save();
+
+    // 4e. Create the Intern Role
+    const internRole = new Role({
+      companyId: savedCompany._id,
+      name: 'INTERN',
+      description: 'Standard intern permissions',
+      permissions: ['VIEW_DASHBOARD', 'REQUEST_LEAVE'],
+      isSystemDefined: true
+    });
+    await internRole.save();
 
     // 5. Hash HR Password
     const salt = await bcrypt.genSalt(10);
@@ -63,7 +113,7 @@ router.post('/register', async (req, res) => {
       companyId: savedCompany._id,
       email: hrEmail.toLowerCase(),
       password: hashedPassword,
-      roleId: savedRole._id,
+      roleId: savedAdminRole._id, // Assign HR_ADMIN to the initial user
       profile: {
         firstName: hrName
       },
@@ -76,9 +126,8 @@ router.post('/register', async (req, res) => {
     const savedUser = await newUser.save();
 
     // 7. Generate JWT Token for immediate login
-    // We keep role: 'hr' for backward compatibility with the frontend until it's fully migrated
     const token = jwt.sign(
-      { user: { id: savedUser._id, companyId: savedCompany._id, role: 'hr' } },
+      { user: { id: savedUser._id, companyId: savedCompany._id, role: 'hr_admin' } },
       process.env.JWT_SECRET || 'fallback_secret_key',
       { expiresIn: '1d' }
     );
@@ -87,11 +136,12 @@ router.post('/register', async (req, res) => {
       success: true,
       msg: 'Company and HR Admin registered successfully!',
       token,
-      hr: {
+      user: {
         id: savedUser._id,
-        name: savedUser.profile.firstName,
+        firstName: savedUser.profile.firstName,
         email: savedUser.email,
-        companyId: savedCompany._id
+        companyId: savedCompany._id,
+        role: 'hr_admin'
       },
       company: {
         id: savedCompany._id,
@@ -116,20 +166,33 @@ router.get('/verify/:code', async (req, res) => {
     const code = req.params.code;
     const company = await Company.findOne({ 
       companyCode: { $regex: new RegExp(`^${code}$`, 'i') } 
-    }).select('name companyCode');
+    }).select('name companyCode settings');
 
     if (!company) {
       return res.status(404).json({ success: false, msg: 'Invalid Company Code.' });
     }
 
-    res.json({
+    const companyObj = company.toObject();
+    const settings = companyObj.settings || {};
+    const internRoles = Array.from(new Set([...(settings.internRoles || []), 'Other']));
+    const employeeRoles = Array.from(new Set([...(settings.employeeRoles || []), 'Other']));
+
+    const responseBody = {
       success: true,
       company: {
         id: company._id,
         name: company.name,
-        companyCode: company.companyCode
+        companyCode: company.companyCode,
+        settings: {
+          themeColor: settings.themeColor || '#00657F',
+          internRoles: internRoles,
+          employeeRoles: employeeRoles
+        }
       }
-    });
+    };
+
+    console.log(`[DEBUG] Final Response:`, JSON.stringify(responseBody, null, 2));
+    res.json(responseBody);
   } catch (error) {
     console.error('Verify Error:', error);
     res.status(500).json({ success: false, msg: 'Server error during verification.' });

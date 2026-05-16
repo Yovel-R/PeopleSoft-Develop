@@ -15,9 +15,18 @@ router.get('/company', verifyTenant, async (req, res) => {
       return res.status(404).json({ success: false, msg: 'Company not found' });
     }
 
+    const companyObj = company.toObject();
+    const settings = companyObj.settings || {};
+    const employeeRoles = Array.from(new Set([...(settings.employeeRoles || []), 'Other']));
+    const internRoles = Array.from(new Set([...(settings.internRoles || []), 'Other']));
+
     res.json({
       success: true,
-      settings: company.settings,
+      settings: {
+        ...settings,
+        internRoles: internRoles,
+        employeeRoles: employeeRoles
+      },
       offerLetterSettings: company.settings?.offerLetterSettings || {},
       company: {
         name: company.name,
@@ -37,7 +46,7 @@ router.get('/company', verifyTenant, async (req, res) => {
  */
 router.put('/company', verifyTenant, async (req, res) => {
   try {
-    const { receivingEmail, themeColor, locations, communication, offerLetterSettings } = req.body;
+    const { receivingEmail, themeColor, locations, communication, employeeRoles, internRoles, offerLetterSettings } = req.body;
     
     const company = await Company.findById(req.tenant.companyId);
     if (!company) {
@@ -52,6 +61,8 @@ router.put('/company', verifyTenant, async (req, res) => {
     if (themeColor !== undefined) company.settings.themeColor = themeColor;
     if (locations !== undefined) company.settings.locations = locations;
     if (communication !== undefined) company.settings.communication = communication;
+    if (employeeRoles !== undefined) company.settings.employeeRoles = employeeRoles;
+    if (internRoles !== undefined) company.settings.internRoles = internRoles;
     
     if (offerLetterSettings !== undefined) {
       company.settings.offerLetterSettings = {

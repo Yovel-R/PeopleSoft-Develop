@@ -4,11 +4,26 @@ const Project = require('../models/Project');
 const mongoose = require('mongoose');
 const verifyTenant = require("../middleware/tenant.middleware");
 
+// Get all projects for a company
+router.get('/all', verifyTenant, async (req, res) => {
+  try {
+    const projects = await Project.find({ companyId: req.tenant.companyId }).sort({ createdAt: -1 });
+    res.json({ success: true, projects });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Create a new project
 router.post('/create', verifyTenant, async (req, res) => {
   try {
     const project = new Project({ ...req.body, companyId: req.tenant.companyId });
     await project.save();
+    
+    // Emit real-time event
+    const io = req.app.get('io');
+    io.emit('project-created', { project });
+    
     res.status(201).json({ success: true, project });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -50,6 +65,10 @@ router.put('/update/:projectId', verifyTenant, async (req, res) => {
     // Progress is auto-calculated in pre-save hook
     await project.save();
     
+    // Emit real-time event
+    const io = req.app.get('io');
+    io.emit('project-updated', { project });
+    
     res.json({ success: true, project });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -76,6 +95,11 @@ router.put('/toggle-task/:projectId/:taskId', verifyTenant, async (req, res) => 
     }
 
     await project.save();
+
+    // Emit real-time event
+    const io = req.app.get('io');
+    io.emit('project-updated', { project });
+    
     res.json({ success: true, project });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -85,7 +109,13 @@ router.put('/toggle-task/:projectId/:taskId', verifyTenant, async (req, res) => 
 // Delete project
 router.delete('/:projectId', verifyTenant, async (req, res) => {
   try {
-    await Project.findOneAndDelete({ _id: req.params.projectId, companyId: req.tenant.companyId });
+    const projectId = req.params.projectId;
+    await Project.findOneAndDelete({ _id: projectId, companyId: req.tenant.companyId });
+    
+    // Emit real-time event
+    const io = req.app.get('io');
+    io.emit('project-deleted', { projectId });
+    
     res.json({ success: true, message: 'Project deleted' });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });

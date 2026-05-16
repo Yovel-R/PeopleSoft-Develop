@@ -13,5 +13,6 @@ router.post("/unified-login", authController.login);
 router.get("/me", verifyTenant, authController.getMe);
 router.post("/forgot-password", authController.forgotPassword);
 router.post("/reset-password", authController.resetPassword);
+router.get("/verify-company/:code", authController.verifyCompany);
 
 module.exports = router;

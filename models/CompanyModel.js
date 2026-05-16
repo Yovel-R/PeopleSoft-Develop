@@ -25,6 +25,10 @@ const CompanySchema = new mongoose.Schema({
       whatsappNotifications: { type: Boolean, default: false },
       emailNotifications: { type: Boolean, default: true }
     },
+    employeeRoles: [{ type: String }],
+    internRoles: [{ type: String }],
+    hrPolicyUrl: { type: String, default: null },
+    hrPolicyUpdatedAt: { type: Date, default: null },
     offerLetterSettings: {
       companyName: { type: String, default: 'Softrate Technologies (P) Ltd' },
       address: { type: String, default: 'SOFTRATE TECH PARK, MANGADU, CHENNAI, INDIA, 600 122' },

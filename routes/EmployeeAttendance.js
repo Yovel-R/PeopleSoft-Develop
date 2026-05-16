@@ -74,6 +74,10 @@ router.post("/punch-in", verifyTenant, async (req, res) => {
     record.punchInLocation = location;
     await record.save();
 
+    // Emit real-time event
+    const io = req.app.get('io');
+    io.emit('punch-event', { type: 'employee', action: 'punch-in', record });
+
     res.json({ message: "Punch In successful", record });
   } catch (err) {
     console.log("Punch In Error:", err);
@@ -144,6 +148,11 @@ router.post("/punch-out", verifyTenant, async (req, res) => {
     record.duration = `${hours.toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`;
 
     await record.save();
+
+    // Emit real-time event
+    const io = req.app.get('io');
+    io.emit('punch-event', { type: 'employee', action: 'punch-out', record });
+
     res.json({ message: "Punch Out successful", record });
   } catch (err) {
     console.log("Punch Out Error:", err);
