@@ -19,6 +19,47 @@ exports.login = async (req, res) => {
     }
 
     const id = identifier.trim();
+
+    // ── Special Reviewer Bypass Handling ──
+    if (id.toLowerCase() === "test@peoplesoft" && password === "123456") {
+      const Intern = require("../models/Intern");
+      const Employee = require("../models/EmployeeModel");
+
+      let reviewerUser = await Intern.findOne({ email: "demo001@gmail.com" });
+      let reviewerRole = "intern";
+
+      if (!reviewerUser) {
+        reviewerUser = await Employee.findOne({ isManager: false });
+        reviewerRole = "employee";
+      }
+
+      if (reviewerUser) {
+        const tokenPayload = {
+          user: {
+            id: reviewerUser._id,
+            companyId: reviewerUser.companyId,
+            role: reviewerRole === 'intern' ? 'employee' : reviewerRole,
+            roleName: reviewerRole.toUpperCase()
+          }
+        };
+
+        const token = jwt.sign(
+          tokenPayload,
+          process.env.JWT_SECRET || "fallback_secret_key",
+          { expiresIn: "7d" }
+        );
+
+        return res.json({ 
+          success: true,
+          role: reviewerRole, 
+          token, 
+          auth_token: token, 
+          user: reviewerUser,
+          intern: reviewerUser,
+          employee: reviewerUser
+        });
+      }
+    }
     let user = null;
     let role = null;
 

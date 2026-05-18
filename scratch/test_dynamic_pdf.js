@@ -1,38 +1,47 @@
-const { generateOfferLetter } = require('../utilities/offerLetterGenerator');
+const { generateDynamicPDF } = require('../utilities/certificateGenerator');
 const fs = require('fs');
 const path = require('path');
 
+const mockData = {
+    fullName: "John Doe",
+    joinDate: "2023-01-15T00:00:00Z",
+    companyName: "Acme Corp"
+};
+
+const mockTemplate = {
+    orientation: 'portrait',
+    pages: [{
+        backgroundUrl: '', 
+        placeholders: [
+            { key: 'fullName', x: 100, y: 100, fontSize: 24, isBold: true, color: '#333333' }
+        ],
+        paragraphs: [
+            {
+                text: "This is to certify that {{fullName}} has successfully completed their tenure at {{companyName}}, joining on {{joinDate}}.",
+                x: 100,
+                y: 200,
+                width: 400,
+                fontSize: 16,
+                fontFamily: "Inter",
+                alignment: "justify",
+                letterSpacing: 0.05,
+                lineHeight: 1.5,
+                isItalic: true,
+                color: "#1a73e8"
+            }
+        ]
+    }]
+};
+
 async function test() {
-    const mockIntern = {
-        fullName: 'Test Candidate',
-        role: 'Full Stack Developer',
-        onboardingDate: new Date(),
-        endDate: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
-    };
-
-    const mockSettings = {
-        companyName: 'Acme Corp',
-        address: '123 Acme St, Toon Town, 12345',
-        contact: 'support@acme.com',
-        website: 'www.acme.com',
-        signatoryName: 'Bugs Bunny',
-        signatoryRole: 'Chief Mischief Officer',
-        workLocation: 'Toon Town Office',
-        // Using a publicly available placeholder image for logo and signature
-        logoUrl: 'https://via.placeholder.com/300x100.png?text=ACME+LOGO',
-        signatureUrl: 'https://via.placeholder.com/200x50.png?text=Bugs+Bunny'
-    };
-
     try {
         console.log("Generating PDF with mock settings...");
-        const buffer = await generateOfferLetter(mockIntern, mockSettings);
-        
-        const outputPath = path.join(__dirname, 'test_offer_letter.pdf');
+        const buffer = await generateDynamicPDF(mockData, mockTemplate);
+        const outputPath = path.join(__dirname, 'test_paragraph_certificate.pdf');
         fs.writeFileSync(outputPath, buffer);
         console.log("PDF generated successfully at:", outputPath);
-    } catch (err) {
-        console.error("Test failed:", err);
+    } catch (e) {
+        console.error("Failed:", e);
     }
 }
-
 test();

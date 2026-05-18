@@ -6,7 +6,8 @@ const { hrSignup, savePolicyUrl, getPolicyUrl, getPolicyForInterns} =
 const verifyTenant = require("../middleware/tenant.middleware");
 
 router.post("/signup", hrSignup);
-// Unified login is now handled in auth.routes.js
+const authController = require("../controllers/AuthController");
+router.post("/login", authController.login);
 router.post("/policy/save", verifyTenant, savePolicyUrl);
 router.get("/policy", verifyTenant, getPolicyUrl);
 router.get("/policy-only", verifyTenant, getPolicyForInterns);

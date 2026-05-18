@@ -183,6 +183,26 @@ router.get("/all/initial", verifyTenant, async (req, res) => {
 });
 
 
+/* ===================================================
+   GET ALL PENDING INTERNS (status: initial) — for HR Approvals Hub
+   Returns interns awaiting HR action (manager-approved or no manager)
+=================================================== */
+router.get("/all/pending", verifyTenant, async (req, res) => {
+  try {
+    const interns = await Intern.findOne
+      ? await Intern.find({
+          status: "initial",
+          companyId: req.tenant.companyId
+        })
+          .populate("assignedManager", "fullName department")
+          .sort({ createdAt: -1 })
+      : [];
+    res.json(interns);
+  } catch (err) {
+    console.error("Fetch Pending Interns Error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
 
 // Get all approved or ongoing interns
 // Get all approved or ongoing interns with filters
@@ -406,7 +426,8 @@ async function generateInternId(companyId) {
   return internId;
 }
 
-// Unified login is now handled in auth.routes.js
+const authController = require("../controllers/AuthController");
+router.post("/login", authController.login);
 
 // Get intern by internid or MongoDB _id
 router.get("/get/:id", verifyTenant, async (req, res) => {

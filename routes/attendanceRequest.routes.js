@@ -18,6 +18,7 @@ router.post("/apply", verifyTenant, async (req, res) => {
     const managerApprovalStatus = intern.assignedManager ? "pending" : "approved";
 
     const request = new AttendanceRequest({
+      companyId: req.tenant.companyId,
       internId: intern.internid,
       internMongoId,
       internName: intern.fullName,

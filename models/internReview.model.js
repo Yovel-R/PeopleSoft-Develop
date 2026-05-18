@@ -4,7 +4,7 @@ const mongoose = require("mongoose");
 
 const GoalSchema = new mongoose.Schema({
   
-  companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },perspective: { type: String, required: true, trim: true },
+  companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", index: true },perspective: { type: String, required: true, trim: true },
   kpi: {type: String,required: true,trim: true},
   title: {type: String,required: true,trim: true},
   description: {type: String,required: true,trim: true},
@@ -17,6 +17,7 @@ const GoalSchema = new mongoose.Schema({
 /* ---------------------- REVIEW SCHEMA ---------------------- */
 
 const ReviewSchema = new mongoose.Schema({
+  companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
   internId: {
     type: String,
     required: true,

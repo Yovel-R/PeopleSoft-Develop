@@ -4,6 +4,8 @@ const mongoose = require('mongoose');
 const router = express.Router();
 const Employee = require('../models/EmployeeModel');
 const Intern = require('../models/Intern');
+const Review = require('../models/internReview.model');
+const EmployeeReview = require('../models/employeeReview.model');
 
 // Fetch all managers
 router.get("/managers", verifyTenant, async (req, res) => {
@@ -85,9 +87,54 @@ router.get("/team/:managerId", verifyTenant, async (req, res) => {
       status: { $in: ['approved', 'ongoing', 'active'] }
     }).select('fullName _id role department EmployeeId email phone onboardingDate status qualification specialization college passingYear ugCgpa pgCgpa experienceYears emergencyPhone dob gender address linkedin');
 
+    // Calculate current review month
+    const now = new Date();
+    const dateStr = now.toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    const parts = dateStr.split("-");
+    let year = parseInt(parts[0]);
+    let month = parseInt(parts[1]);
+    const day = parseInt(parts[2]);
+
+    if (day <= 5) {
+      month--;
+      if (month === 0) {
+        month = 12;
+        year--;
+      }
+    }
+    const monthStr = `${year}-${String(month).padStart(2, "0")}`;
+
+    // Find graded reviews for the current month
+    const companyId = req.tenant.companyId;
+    const gradedInterns = await Review.find({
+      companyId,
+      date: { $regex: `^${monthStr}` },
+      isGraded: true
+    }).select('internId');
+    const gradedInternIds = new Set(gradedInterns.map(r => r.internId));
+
+    const gradedEmployees = await EmployeeReview.find({
+      companyId,
+      date: { $regex: `^${monthStr}` },
+      isGraded: true
+    }).select('employeeId');
+    const gradedEmployeeIds = new Set(gradedEmployees.map(e => e.employeeId));
+
+    const internsWithStatus = interns.map(intern => {
+      const internObj = intern.toObject();
+      internObj.isReviewed = gradedInternIds.has(intern.internid);
+      return internObj;
+    });
+
+    const employeesWithStatus = employees.map(emp => {
+      const empObj = emp.toObject();
+      empObj.isReviewed = gradedEmployeeIds.has(emp.EmployeeId);
+      return empObj;
+    });
+
     res.json({
-      interns,
-      employees
+      interns: internsWithStatus,
+      employees: employeesWithStatus
     });
   } catch (error) {
     res.status(500).json({ error: error.message });

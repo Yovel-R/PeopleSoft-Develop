@@ -45,12 +45,12 @@ const CompanySchema = new mongoose.Schema({
       logoSize: { type: Number, default: 50 },
       borderWidth: { type: Number, default: 10 },
       documentTemplates: {
-        offerLetter: { orientation: { type: String, default: 'portrait' }, pages: [{ backgroundUrl: String, placeholders: [{ key: String, x: Number, y: Number, fontSize: Number, isBold: Boolean, color: String }] }] },
-        annexure: { orientation: { type: String, default: 'portrait' }, pages: [{ backgroundUrl: String, placeholders: [{ key: String, x: Number, y: Number, fontSize: Number, isBold: Boolean, color: String }] }] },
-        nda: { orientation: { type: String, default: 'portrait' }, pages: [{ backgroundUrl: String, placeholders: [{ key: String, x: Number, y: Number, fontSize: Number, isBold: Boolean, color: String }] }] },
-        lor: { orientation: { type: String, default: 'landscape' }, pages: [{ backgroundUrl: String, placeholders: [{ key: String, x: Number, y: Number, fontSize: Number, isBold: Boolean, color: String }] }] },
-        internshipCompletion: { orientation: { type: String, default: 'landscape' }, pages: [{ backgroundUrl: String, placeholders: [{ key: String, x: Number, y: Number, fontSize: Number, isBold: Boolean, color: String }] }] },
-        projectCompletion: { orientation: { type: String, default: 'landscape' }, pages: [{ backgroundUrl: String, placeholders: [{ key: String, x: Number, y: Number, fontSize: Number, isBold: Boolean, color: String }] }] }
+        offerLetter: { orientation: { type: String, default: 'portrait' }, pages: [{ backgroundUrl: String, placeholders: [{ key: String, x: Number, y: Number, fontSize: Number, isBold: Boolean, color: String }], paragraphs: [mongoose.Schema.Types.Mixed] }] },
+        annexure: { orientation: { type: String, default: 'portrait' }, pages: [{ backgroundUrl: String, placeholders: [{ key: String, x: Number, y: Number, fontSize: Number, isBold: Boolean, color: String }], paragraphs: [mongoose.Schema.Types.Mixed] }] },
+        nda: { orientation: { type: String, default: 'portrait' }, pages: [{ backgroundUrl: String, placeholders: [{ key: String, x: Number, y: Number, fontSize: Number, isBold: Boolean, color: String }], paragraphs: [mongoose.Schema.Types.Mixed] }] },
+        lor: { orientation: { type: String, default: 'landscape' }, pages: [{ backgroundUrl: String, placeholders: [{ key: String, x: Number, y: Number, fontSize: Number, isBold: Boolean, color: String }], paragraphs: [mongoose.Schema.Types.Mixed] }] },
+        internshipCompletion: { orientation: { type: String, default: 'landscape' }, pages: [{ backgroundUrl: String, placeholders: [{ key: String, x: Number, y: Number, fontSize: Number, isBold: Boolean, color: String }], paragraphs: [mongoose.Schema.Types.Mixed] }] },
+        projectCompletion: { orientation: { type: String, default: 'landscape' }, pages: [{ backgroundUrl: String, placeholders: [{ key: String, x: Number, y: Number, fontSize: Number, isBold: Boolean, color: String }], paragraphs: [mongoose.Schema.Types.Mixed] }] }
       }
     }
   }

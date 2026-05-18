@@ -130,6 +130,12 @@ router.post(
 
       await newEmployee.save();
 
+      // Trigger Real-Time Dashboard/Approvals Update
+      const io = req.app.get('io');
+      if (io) {
+        io.emit('activity-updated', { type: 'new_employee', employee: newEmployee });
+      }
+
       // Map uploaded files to attachments
       const attachments = req.files?.map(file => ({
         filename: file.originalname,
@@ -170,6 +176,24 @@ router.get("/all/initial", verifyTenant, async (req, res) => {
 /* ============================
    GET ACTIVE EMPLOYEES
 ============================ */
+/* ===================================================
+   GET ALL PENDING EMPLOYEES (status: initial) — for HR Approvals Hub
+=================================================== */
+router.get("/all/pending", verifyTenant, async (req, res) => {
+  try {
+    const employees = await Employee.find({
+      status: "initial",
+      companyId: req.tenant.companyId
+    })
+      .sort({ submittedAt: -1 })
+      .lean();
+    res.json(employees);
+  } catch (err) {
+    console.error("Fetch Pending Employees Error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 router.get("/all/active", verifyTenant, async (req, res) => {
   try {
     const { range = "all", status = "all" } = req.query;
@@ -375,6 +399,9 @@ router.delete("/reject/:id", verifyTenant, async (req, res) => {
     res.status(500).json({ message: "Server error", error });
   }
 });
+
+const authController = require("../controllers/AuthController");
+router.post("/login", authController.login);
 
 /* ============================
    MANAGER LOGIN (BY EMAIL)
@@ -634,6 +661,40 @@ router.put("/update/:id", verifyTenant, async (req, res) => {
   } catch (err) {
     console.error("Employee Update Error:", err);
     res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
+
+/* ============================
+   GET EMPLOYEES ASSIGNED TO MANAGER (INITIAL STATUS)
+============================ */
+router.get("/assigned-to/:managerId", verifyTenant, async (req, res) => {
+  try {
+    const employees = await Employee.find({ 
+      assignedManager: req.params.managerId,
+      status: "initial"
+    });
+    res.json(employees);
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error });
+  }
+});
+
+/* ============================
+   MANAGER REVIEW OF EMPLOYEE ONBOARDING
+============================ */
+router.put("/manager-review/:id", verifyTenant, async (req, res) => {
+  try {
+    const { status, remarks } = req.body; // status: 'approved' | 'rejected'
+    const employee = await Employee.findById(req.params.id);
+    if (!employee) return res.status(404).json({ message: "Employee not found" });
+
+    employee.managerApprovalStatus = status;
+    employee.managerRemarks = remarks;
+    await employee.save();
+
+    res.json({ message: `Employee onboarding request ${status} by manager`, employee });
+  } catch (error) {
+    res.status(500).json({ message: "Server error", error });
   }
 });
 

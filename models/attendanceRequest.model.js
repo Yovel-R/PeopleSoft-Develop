@@ -5,7 +5,7 @@ const AttendanceRequestSchema = new mongoose.Schema({
   companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },internId: { type: String, required: true }, // The readable ID (e.g., 2025001)
   internMongoId: { type: mongoose.Schema.Types.ObjectId, ref: "Intern", required: true },
   internName: { type: String, required: true },
-  managerMongoId: { type: mongoose.Schema.Types.ObjectId, ref: "Employee", required: true },
+  managerMongoId: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
   date: { type: Date, required: true },
   requestedPunchIn: { type: String, default: null }, // ISO string or time string
   requestedPunchOut: { type: String, default: null },

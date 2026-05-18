@@ -42,11 +42,25 @@ exports.createResignation = async (req, res) => {
     if (existing && existing.status === "rejected") {
       Object.assign(existing, resignationData);
       await existing.save();
+
+      // Trigger Real-Time Dashboard/Approvals Update
+      const io = req.app.get('io');
+      if (io) {
+        io.emit('activity-updated', { type: 'new_resignation', resignation: existing });
+      }
+
       return res.json({ success: true, message: "Resignation resubmitted successfully", data: existing });
     }
 
     const data = new Resignation(resignationData);
     await data.save();
+
+    // Trigger Real-Time Dashboard/Approvals Update
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('activity-updated', { type: 'new_resignation', resignation: data });
+    }
+
     res.json({ success: true, message: "Resignation submitted successfully", data });
   } catch (error) {
     console.error("Resignation Error:", error);
@@ -72,7 +86,7 @@ exports.checkResignation = async (req, res) => {
 // GET all resignations
 exports.getAllResignations = async (req, res) => {
   try {
-    const list = await Resignation.find().sort({ createdAt: -1 });
+    const list = await Resignation.find({ companyId: req.tenant.companyId }).sort({ createdAt: -1 });
     res.json({ success: true, data: list });
   } catch (error) {
     res.status(500).json({ success: false, message: "Server Error" });
@@ -82,7 +96,7 @@ exports.getAllResignations = async (req, res) => {
 // GET resignation by userId
 exports.getResignationByUserId = async (req, res) => {
   try {
-    const record = await Resignation.findOne({ userId: req.params.userId });
+    const record = await Resignation.findOne({ userId: req.params.userId, companyId: req.tenant.companyId });
     if (!record) return res.json({ success: false, message: "No record found" });
     res.json({ success: true, data: record });
   } catch (error) {
@@ -93,7 +107,7 @@ exports.getResignationByUserId = async (req, res) => {
 // GET pending resignations for HR
 exports.getPendingResignations = async (req, res) => {
   try {
-    const pendingList = await Resignation.find({ status: "pending_hr" }).sort({ createdAt: -1 });
+    const pendingList = await Resignation.find({ status: "pending_hr", companyId: req.tenant.companyId }).sort({ createdAt: -1 });
     res.json({ success: true, data: pendingList });
   } catch (err) {
     console.error("Fetch Pending Resignations Error:", err);
@@ -105,7 +119,7 @@ exports.getPendingResignations = async (req, res) => {
 exports.getManagerPendingResignations = async (req, res) => {
   try {
     const { managerId } = req.params;
-    const list = await Resignation.find({ managerId, status: "pending_manager" }).sort({ createdAt: -1 });
+    const list = await Resignation.find({ managerId, status: "pending_manager", companyId: req.tenant.companyId }).sort({ createdAt: -1 });
     res.json({ success: true, data: list });
   } catch (err) {
     res.status(500).json({ success: false, message: "Server Error" });

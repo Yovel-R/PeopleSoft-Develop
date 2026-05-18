@@ -60,6 +60,7 @@ router.post("/submit-review", verifyTenant, async (req, res) => {
     }
 
     const review = new EmployeeReview({
+      companyId: req.tenant.companyId,
       employeeId,
       employeeName,
       team,

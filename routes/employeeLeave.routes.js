@@ -319,4 +319,31 @@ router.get("/count/:employeeId", verifyTenant, async (req, res) => {
   }
 });
 
+/* ============================
+   GET ALL LEAVE REQUESTS (FOR HR)
+============================ */
+router.get("/all", verifyTenant, async (req, res) => {
+  try {
+    const leaves = await EmployeeLeave.find({ companyId: req.tenant.companyId }).sort({ createdAt: -1 });
+    res.json(leaves);
+  } catch (error) {
+    res.status(500).json({ message: "Server Error" });
+  }
+});
+
+/* ============================
+   GET ALL LEAVE REQUESTS FOR MANAGER'S TEAM
+============================ */
+router.get("/manager-all/:managerId", verifyTenant, async (req, res) => {
+  try {
+    const leaves = await EmployeeLeave.find({ 
+      companyId: req.tenant.companyId,
+      managerId: req.params.managerId
+    }).sort({ createdAt: -1 });
+    res.json(leaves);
+  } catch (error) {
+    res.status(500).json({ message: "Server Error" });
+  }
+});
+
 module.exports = router;
