@@ -46,7 +46,7 @@ router.get('/company', verifyTenant, async (req, res) => {
  */
 router.put('/company', verifyTenant, async (req, res) => {
   try {
-    const { receivingEmail, themeColor, locations, communication, employeeRoles, internRoles, offerLetterSettings } = req.body;
+    const { receivingEmail, themeColor, locations, communication, employeeRoles, internRoles, offerLetterSettings, payrollSettings } = req.body;
     
     const company = await Company.findById(req.tenant.companyId);
     if (!company) {
@@ -71,6 +71,14 @@ router.put('/company', verifyTenant, async (req, res) => {
       };
       // Explicitly mark as modified for nested objects
       company.markModified('settings.offerLetterSettings');
+    }
+
+    if (payrollSettings !== undefined) {
+      company.settings.payrollSettings = {
+        ...company.settings.payrollSettings,
+        ...payrollSettings
+      };
+      company.markModified('settings.payrollSettings');
     }
 
     company.markModified('settings');

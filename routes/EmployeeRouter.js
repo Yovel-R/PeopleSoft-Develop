@@ -643,17 +643,17 @@ router.put("/update/:id", verifyTenant, async (req, res) => {
 
     if (!updatedEmployee) return res.status(404).json({ message: "Employee not found" });
 
-    // Sync with User record if email or profile fields changed
-    if (req.body.email || req.body.fullName || req.body.phone) {
+    // Sync with User record if email, profile fields, or payroll changed
+    if (req.body.email || req.body.fullName || req.body.phone || req.body.payroll) {
+      const updateData = {};
+      if (req.body.fullName) updateData['profile.firstName'] = updatedEmployee.fullName;
+      if (req.body.phone) updateData['profile.phone'] = updatedEmployee.phone;
+      if (req.body.designation || req.body.role) updateData['employment.designation'] = updatedEmployee.designation || updatedEmployee.role;
+      if (req.body.payroll) updateData['payroll'] = updatedEmployee.payroll;
+
       await User.findOneAndUpdate(
         { email: { $regex: new RegExp(`^${updatedEmployee.email.trim()}$`, 'i') }, companyId: req.tenant.companyId },
-        { 
-          $set: {
-            'profile.firstName': updatedEmployee.fullName,
-            'profile.phone': updatedEmployee.phone,
-            'employment.designation': updatedEmployee.designation || updatedEmployee.role
-          }
-        }
+        { $set: updateData }
       );
     }
 

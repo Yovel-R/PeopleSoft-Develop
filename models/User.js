@@ -72,7 +72,13 @@ const UserSchema = new mongoose.Schema({
   },
 
   createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  updatedAt: { type: Date, default: Date.now },
+  payroll: {
+    basicSalary: { type: Number, default: 0 },
+    hra: { type: Number, default: 0 },
+    allowances: { type: Number, default: 0 },
+    deductions: { type: Number, default: 0 }
+  }
 });
 
 // Ensure email is unique per company

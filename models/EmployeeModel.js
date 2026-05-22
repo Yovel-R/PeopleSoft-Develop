@@ -48,6 +48,12 @@ const EmployeeSchema = new mongoose.Schema({
   managerApprovalStatus: { type: String, enum: ['pending', 'approved', 'rejected', null], default: null },
   managerRemarks: { type: String, default: "" },
   submittedAt: { type: Date, default: Date.now },
+  payroll: {
+    basicSalary: { type: Number, default: 0 },
+    hra: { type: Number, default: 0 },
+    allowances: { type: Number, default: 0 },
+    deductions: { type: Number, default: 0 }
+  }
 });
 
 module.exports = mongoose.model("Employee", EmployeeSchema);

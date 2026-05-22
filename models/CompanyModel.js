@@ -29,6 +29,32 @@ const CompanySchema = new mongoose.Schema({
     internRoles: [{ type: String }],
     hrPolicyUrl: { type: String, default: null },
     hrPolicyUpdatedAt: { type: Date, default: null },
+    payrollSettings: {
+      pfCalculateEmployee: { type: Boolean, default: false },
+      pfCalculateIntern: { type: Boolean, default: false },
+      pfPercentage: { type: Number, default: 12 },
+      taxPercentage: { type: Number, default: 10 },
+      taxLimitThreshold: { type: Number, default: 50000 },
+
+      // LOP (Loss of Pay) Settings
+      // Applies to: pending leaves + absence without any approval
+      lopSettings: {
+        enableLopEmployee:      { type: Boolean, default: false },
+        enableLopIntern:        { type: Boolean, default: false },
+        // 'percentage' = % of per-day salary deducted | 'amount' = flat ₹ per day
+        lopTypeEmployee:        { type: String, enum: ['percentage', 'amount'], default: 'percentage' },
+        lopTypeIntern:          { type: String, enum: ['percentage', 'amount'], default: 'percentage' },
+        // Used when lopType === 'percentage' (100 = full-day deduction)
+        lopPercentageEmployee:  { type: Number, default: 100 },
+        lopPercentageIntern:    { type: Number, default: 100 },
+        // Used when lopType === 'amount' (flat ₹ per unauthorized day)
+        lopAmountEmployee:      { type: Number, default: 0 },
+        lopAmountIntern:        { type: Number, default: 0 },
+        // Working days per month (used to derive per-day salary from basic)
+        workingDaysEmployee:    { type: Number, default: 26 },
+        workingDaysIntern:      { type: Number, default: 26 }
+      }
+    },
     offerLetterSettings: {
       companyName: { type: String, default: 'Softrate Technologies (P) Ltd' },
       address: { type: String, default: 'SOFTRATE TECH PARK, MANGADU, CHENNAI, INDIA, 600 122' },

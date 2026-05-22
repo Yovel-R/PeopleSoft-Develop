@@ -36,6 +36,12 @@ const InternSchema = new mongoose.Schema({
   leaveCount: { type: Number, default: 0 },
 
   createdAt: { type: Date, default: Date.now },
+  payroll: {
+    basicSalary: { type: Number, default: 0 },
+    hra: { type: Number, default: 0 },
+    allowances: { type: Number, default: 0 },
+    deductions: { type: Number, default: 0 }
+  }
 });
 
 module.exports = mongoose.model("Intern", InternSchema);

@@ -676,16 +676,16 @@ router.put("/update/:id", verifyTenant, async (req, res) => {
     if (!updatedIntern) return res.status(404).json({ message: "Intern not found" });
 
     // Sync with User record
-    if (req.body.email || req.body.fullName || req.body.contact) {
+    if (req.body.email || req.body.fullName || req.body.contact || req.body.payroll) {
+      const updateData = {};
+      if (req.body.fullName) updateData['profile.firstName'] = updatedIntern.fullName;
+      if (req.body.contact) updateData['profile.phone'] = updatedIntern.contact;
+      if (req.body.role) updateData['employment.designation'] = updatedIntern.role;
+      if (req.body.payroll) updateData['payroll'] = updatedIntern.payroll;
+
       await User.findOneAndUpdate(
         { email: { $regex: new RegExp(`^${updatedIntern.email.trim()}$`, 'i') }, companyId: req.tenant.companyId },
-        { 
-          $set: {
-            'profile.firstName': updatedIntern.fullName,
-            'profile.phone': updatedIntern.contact,
-            'employment.designation': updatedIntern.role
-          }
-        }
+        { $set: updateData }
       );
     }
 
